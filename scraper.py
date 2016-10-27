@@ -12,7 +12,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Download all new data from an MLab node, then upload what can be uploaded.
 
 This is a single-shot program to download data from an MLab node and then
@@ -43,11 +42,11 @@ def acquire_lock_or_die(lockfile):
   # This is bad locking. But we're looking to protect binaries
   # that are running hours apart from one another, not two
   # binaries which are racing for the same file at startup.
-  assert_msg = ("Lockfile %s is present. Old job is likely still running. "
-                "Aborting." % lockfile)
+  assert_msg = ('Lockfile %s is present. Old job is likely still running. '
+                'Aborting.' % lockfile)
   assert not os.path.exists(lockfile), assert_msg
   with file(lockfile, 'w') as lockfile:
-    print >>lockfile, 'PID of scraper is', os.getpid()
+    print >> lockfile, 'PID of scraper is', os.getpid()
 
 
 def parse_cmdline(args):
@@ -60,32 +59,61 @@ def parse_cmdline(args):
     the results of ArgumentParser.parse_args
   """
   parser = argparse.ArgumentParser(
-      description='Scrape a single experiment at a site, upload the results '
-                  'if enough time has passed.')
-  parser.add_argument('--rsync_host', metavar='HOST', type=str, nargs=1,
-                      required=True, help='The host to connect to over rsync')
-  parser.add_argument('--lockfile_dir', metavar='DIR', type=str, nargs=1,
-                      required=True,
-                      help='The the directory for lockfiles to prevent old '
-                           'jobs and new jobs from running simultaneously')
-  parser.add_argument('--rsync_module', metavar='MODULE', type=str, nargs=1,
-                      required=True,
-                      help='The rsync module to connect to on the server')
-  parser.add_argument('--data_dir', metavar='DIR', type=str, nargs=1,
-                      required=True,
-                      help='The directory under which to save the data')
-  parser.add_argument('--rsync_binary', metavar='RSYNC', type=str, nargs=1,
-                      default=['/usr/bin/rsync'], required=False,
-                      help='The location of the rsync binary '
-                           '(defaults to /usr/bin/rsync)')
-  parser.add_argument('--rsync_port', metavar='PORT', type=int, nargs=1,
-                      default=7999, required=False,
-                      help='The port on which the rsync server runs '
-                           '(defaults to 7999)')
-  parser.add_argument('--spreadsheet', metavar='URL', type=str, nargs=1,
-                      required=True,
-                      help='The google doc ID of the spreadsheet used to sync '
-                           'download information with the nodes.')
+      description='Scrape a single experiment at a site, upload the results if '
+      'enough time has passed.')
+  parser.add_argument(
+      '--rsync_host',
+      metavar='HOST',
+      type=str,
+      nargs=1,
+      required=True,
+      help='The host to connect to over rsync')
+  parser.add_argument(
+      '--lockfile_dir',
+      metavar='DIR',
+      type=str,
+      nargs=1,
+      required=True,
+      help='The the directory for lockfiles to prevent old jobs and new jobs '
+      'from running simultaneously')
+  parser.add_argument(
+      '--rsync_module',
+      metavar='MODULE',
+      type=str,
+      nargs=1,
+      required=True,
+      help='The rsync module to connect to on the server')
+  parser.add_argument(
+      '--data_dir',
+      metavar='DIR',
+      type=str,
+      nargs=1,
+      required=True,
+      help='The directory under which to save the data')
+  parser.add_argument(
+      '--rsync_binary',
+      metavar='RSYNC',
+      type=str,
+      nargs=1,
+      default=['/usr/bin/rsync'],
+      required=False,
+      help='The location of the rsync binary (defaults to /usr/bin/rsync)')
+  parser.add_argument(
+      '--rsync_port',
+      metavar='PORT',
+      type=int,
+      nargs=1,
+      default=7999,
+      required=False,
+      help='The port on which the rsync server runs (defaults to 7999)')
+  parser.add_argument(
+      '--spreadsheet',
+      metavar='URL',
+      type=str,
+      nargs=1,
+      required=True,
+      help='The google doc ID of the spreadsheet used to sync download '
+      'information with the nodes.')
   return parser.parse_args(args)
 
 
@@ -108,16 +136,16 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     a list of filenames
   """
   try:
-    logging.info("rsync file list discovery from %s to %s", rsync_url,
+    logging.info('rsync file list discovery from %s to %s', rsync_url,
                  destination)
     command = [rsync_binary, rsync_url, destination, '--list-only', '-r']
-    logging.info("Listing files on server with the command: %s", command)
+    logging.info('Listing files on server with the command: %s', command)
     lines = subprocess.check_output(command).splitlines()
     files = []
     for line in lines:
       chunks = line.split(None, 4)  # None is a special whitespace arg for split
       if len(chunks) != 5:
-        logging.error("Bad line in output: %s", line)
+        logging.error('Bad line in output: %s', line)
         continue
       files.append(chunks[4])
     return files
@@ -126,7 +154,8 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     sys.exit(1)
 
 
-def get_progress_from_spreadsheet(spreadsheet, rsync_host, rsync_module):  # pragma: no cover
+def get_progress_from_spreadsheet(spreadsheet, rsync_host,
+                                  rsync_module):  # pragma: no cover
   # TODO(pboothe)
   return datetime.datetime(2016, 10, 15).date()
 
@@ -144,11 +173,11 @@ def remove_older_files(date, files):
   filtered = []
   for fname in files:
     if fname.count('/') < 3:
-      logging.info("Ignoring %s on the assumption it is a directory", fname)
+      logging.info('Ignoring %s on the assumption it is a directory', fname)
       continue
     year, month, day, _ = fname.split('/', 3)
     if not (year.isdigit() and month.isdigit() and day.isdigit()):
-      logging.error("Bad filename. Was supposed to be YYYY/MM/DD, but was %s",
+      logging.error('Bad filename. Was supposed to be YYYY/MM/DD, but was %s',
                     fname)
       continue
     # Pass in a radix to guard against zero-padded 8 and 9
@@ -168,7 +197,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
     rsync_binary: The full path to `rsync`
     rsync_url: The url from which to retrieve the files
     files: a list of filenames to retrieve
-    distination: the directory on the local host to put the files
+    destination: the directory on the local host to put the files
   """
   if not files:
     logging.warning('No files to be downloaded from %s', rsync_url)
@@ -178,13 +207,14 @@ def download_files(rsync_binary, rsync_url, files, destination):
     # Write the list of files to a tempfile, so as not to have to worry about
     # too-long command lines full of filenames.
     for fname in files:
-      print >>temp, fname
+      print >> temp, fname
     temp.flush()
     # Download all the files.
     try:
-      logging.info("Downloading %d files", len(files))
-      command = [rsync_binary, '--files-from', temp.name, rsync_url,
-                 destination]
+      logging.info('Downloading %d files', len(files))
+      command = [
+          rsync_binary, '--files-from', temp.name, rsync_url, destination
+      ]
       subprocess.check_call(command)
     except subprocess.CalledProcessError as error:
       logging.error('rsync download failed: %s', str(error))
@@ -199,9 +229,12 @@ def max_new_high_water_mark():
   day could possibly have failed to be written to disk.  So this should
   always be either yesterday, or the day before, depending on how late
   in the day it is.
+
+  Returns:
+    The most recent day whose data is safe to upload.
   """
-  return (datetime.datetime.utcnow() -
-          datetime.timedelta(days=1, hours=8)).date()
+  return (datetime.datetime.utcnow() - datetime.timedelta(
+      days=1, hours=8)).date()
 
 
 def find_all_days_to_upload(localdir, high_water_mark):
@@ -233,30 +266,34 @@ def find_all_days_to_upload(localdir, high_water_mark):
         # Make sure to specify radix 10 to prevent an octal interpretation
         # of 0-padded single digits 08 and 09.
         try:
-          date = datetime.date(year=int(year, 10),
-                               month=int(month, 10),
-                               day=int(day, 10))
+          date = datetime.date(
+              year=int(year, 10), month=int(month, 10), day=int(day, 10))
           if date <= high_water_mark:
             yield date
         except ValueError as v:
-          logging.error("Bad directory that looks like a day: %s", v)
+          logging.error('Bad directory that looks like a day: %s', v)
 
 
 def create_tarball(directory, day):  # pragma: no cover
   # TODO(pboothe)
   return '/tmp/doesnotexist'
 
+
 def upload_tarball(tgz_filename):  # pragma: no cover
   # TODO(pboothe)
   pass
 
-def update_high_water_mark(spreadsheet, rsync_host, rsync_module, day):  # pragma: no cover
+
+def update_high_water_mark(spreadsheet, rsync_host, rsync_module,
+                           day):  # pragma: no cover
   # TODO(pboothe)
   pass
+
 
 def remove_datafiles(directory, day, tgz_filename):  # pragma: no cover
   # TODO(pboothe)
   pass
+
 
 def main():  # pragma: no cover
   # TODO(pboothe) end-to-end tests
@@ -292,10 +329,8 @@ def main():  # pragma: no cover
   for day in find_all_days_to_upload(destination, new_high_water_mark):
     tgz_filename = create_tarball(destination, day)
     upload_tarball(tgz_filename)
-    update_high_water_mark(args.spreadsheet[0],
-                           args.rsync_host[0],
-                           args.rsync_module[0],
-                           day)
+    update_high_water_mark(args.spreadsheet[0], args.rsync_host[0],
+                           args.rsync_module[0], day)
     remove_datafiles(destination, day, tgz_filename)
 
 
