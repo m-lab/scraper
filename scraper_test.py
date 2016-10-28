@@ -16,6 +16,7 @@
 import datetime
 import os
 import shutil
+import subprocess
 import tempfile
 import unittest
 
@@ -73,7 +74,8 @@ class TestScraper(unittest.TestCase):
         args = scraper.parse_cmdline([
             '--rsync_host', rsync_host, '--lockfile_dir', lockfile_dir,
             '--rsync_module', rsync_module, '--data_dir', data_dir,
-            '--spreadsheet', spreadsheet])
+            '--spreadsheet', spreadsheet
+        ])
         self.assertEqual(args.rsync_binary, '/usr/bin/rsync')
         self.assertEqual(args.rsync_port, 7999)
         self.assertEqual(args.max_uncompressed_size, 1000000000)
@@ -212,6 +214,186 @@ BADBADBAD
                 datetime.date(2015, 10, 31), datetime.date(2016, 7, 5),
                 datetime.date(2016, 7, 6)
             ])
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_chdir(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            original = os.getcwd()
+            self.assertNotEqual(original, temp_d)
+            with scraper.chdir(temp_d):
+                self.assertEqual(os.getcwd(), temp_d)
+            self.assertEqual(os.getcwd(), original)
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_chdir_with_exceptions(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            original = os.getcwd()
+            self.assertNotEqual(original, temp_d)
+            try:
+                with scraper.chdir(temp_d):
+                    self.assertEqual(os.getcwd(), temp_d)
+                    raise Exception()
+            except Exception:
+                self.assertEqual(os.getcwd(), original)
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_normalize_hostname(self):
+        self.assertEqual(
+            scraper.normalize_hostname('mlab1-atl02'), 'mlab1-atl02')
+        self.assertEqual(
+            scraper.normalize_hostname('mlab1-atl02-measurement-lab.org'),
+            'mlab1-atl02')
+
+    def test_create_tarfile(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                os.makedirs('2016/01/28')
+                file('2016/01/28/test1.txt', 'w').write('hello')
+                file('2016/01/28/test2.txt', 'w').write('goodbye')
+                scraper.create_tarfile(
+                    '/bin/tar', 'test.tgz',
+                    ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+                shutil.rmtree('2016')
+                self.assertFalse(os.path.exists('2016'))
+                self.assertTrue(os.path.exists('test.tgz'))
+                subprocess.check_call(['/bin/tar', 'xfz', 'test.tgz'])
+                self.assertTrue(os.path.exists('2016'))
+                self.assertEqual(file('2016/01/28/test1.txt').read(), 'hello')
+                self.assertEqual(file('2016/01/28/test2.txt').read(), 'goodbye')
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_create_tarfile_fails_on_existing_tarfile(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                os.makedirs('2016/01/28')
+                file('2016/01/28/test1.txt', 'w').write('hello')
+                file('2016/01/28/test2.txt', 'w').write('goodbye')
+                file('test.tgz', 'w').write('in the way')
+                with self.assertRaises(SystemExit):
+                    scraper.create_tarfile(
+                        '/bin/tar', 'test.tgz',
+                        ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_create_tarfile_fails_on_tar_failure(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                os.makedirs('2016/01/28')
+                file('2016/01/28/test1.txt', 'w').write('hello')
+                file('2016/01/28/test2.txt', 'w').write('goodbye')
+                with self.assertRaises(SystemExit):
+                    scraper.create_tarfile(
+                        '/bin/false', 'test.tgz',
+                        ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_create_tarfile_fails_when_file_is_missing(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                os.makedirs('2016/01/28')
+                file('2016/01/28/test1.txt', 'w').write('hello')
+                file('2016/01/28/test2.txt', 'w').write('goodbye')
+                with self.assertRaises(SystemExit):
+                    scraper.create_tarfile(
+                        '/bin/true', 'test.tgz',
+                        ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_create_tarfiles(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            os.makedirs(os.path.join(temp_d, '2016/01/28'))
+            file(os.path.join(temp_d, '2016/01/28/test1.txt'),
+                 'w').write('hello')
+            file(os.path.join(temp_d, '2016/01/28/test2.txt'),
+                 'w').write('goodbye')
+            files = list(
+                sorted(
+                    scraper.create_tarfiles('/bin/tar', temp_d,
+                                            datetime.date(2016, 1, 28),
+                                            'mlab9-dne04', 'exper', 100000)))
+            for fname in files:
+                self.assertTrue(os.path.isfile(os.path.join(temp_d, fname)))
+            self.assertEqual(files,
+                             ['20160128T000000Z-mlab9-dne04-exper-0000.tgz',])
+            shutil.rmtree(os.path.join(temp_d, '2016'))
+            self.assertFalse(
+                os.path.exists(os.path.join(temp_d, '2016/01/28/test1.txt')))
+            self.assertFalse(
+                os.path.exists(os.path.join(temp_d, '2016/01/28/test2.txt')))
+            with scraper.chdir(temp_d):
+                subprocess.check_call([
+                    '/bin/tar', 'xfz',
+                    os.path.join(temp_d,
+                                 '20160128T000000Z-mlab9-dne04-exper-0000.tgz')
+                ])
+            self.assertTrue(
+                os.path.exists(os.path.join(temp_d, '2016/01/28/test1.txt')))
+            self.assertTrue(
+                os.path.exists(os.path.join(temp_d, '2016/01/28/test2.txt')))
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_create_tarfiles_multiple_small_files(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            os.makedirs(os.path.join(temp_d, '2016/01/28'))
+            file(os.path.join(temp_d, '2016/01/28/test1.txt'),
+                 'w').write('hello')
+            file(os.path.join(temp_d, '2016/01/28/test2.txt'),
+                 'w').write('goodbye')
+            # By setting the max filesize as 4 bytes, we will end up creating a
+            # separate tarfile for each test file.
+            files = list(
+                sorted(
+                    scraper.create_tarfiles('/bin/tar', temp_d,
+                                            datetime.date(2016, 1, 28),
+                                            'mlab9-dne04', 'exper', 4)))
+            for fname in files:
+                self.assertTrue(os.path.isfile(os.path.join(temp_d, fname)))
+            self.assertEqual(files, [
+                '20160128T000000Z-mlab9-dne04-exper-0000.tgz',
+                '20160128T000000Z-mlab9-dne04-exper-0001.tgz'
+            ])
+            shutil.rmtree(os.path.join(temp_d, '2016'))
+            self.assertFalse(
+                os.path.exists(os.path.join(temp_d, '2016/01/28/test1.txt')))
+            self.assertFalse(
+                os.path.exists(os.path.join(temp_d, '2016/01/28/test2.txt')))
+            with scraper.chdir(temp_d):
+                subprocess.check_call([
+                    '/bin/tar', 'xfz',
+                    os.path.join(temp_d,
+                                 '20160128T000000Z-mlab9-dne04-exper-0000.tgz')
+                ])
+            self.assertTrue(
+                os.path.exists(os.path.join(temp_d, '2016/01/28/test1.txt')))
+            self.assertFalse(
+                os.path.exists(os.path.join(temp_d, '2016/01/28/test2.txt')))
+            shutil.rmtree(os.path.join(temp_d, '2016'))
+            with scraper.chdir(temp_d):
+                subprocess.check_call([
+                    '/bin/tar', 'xfz',
+                    os.path.join(temp_d,
+                                 '20160128T000000Z-mlab9-dne04-exper-0001.tgz')
+                ])
+            self.assertFalse(
+                os.path.exists(os.path.join(temp_d, '2016/01/28/test1.txt')))
+            self.assertTrue(
+                os.path.exists(os.path.join(temp_d, '2016/01/28/test2.txt')))
         finally:
             shutil.rmtree(temp_d)
 
