@@ -22,6 +22,7 @@ jobs running in a whole fleet of containers run by Google Container Engine.
 
 import argparse
 import atexit
+import contextlib
 import datetime
 import logging
 import os
@@ -292,10 +293,12 @@ def find_all_days_to_upload(localdir, high_water_mark):
 def chdir(directory):
     """Change the working directory for the duration of a `with` statement.
 
+    From http://benno.id.au/blog/2013/01/20/withfail which fills a sort of
+    obvious niche that one would hope would exist as part of the os library.
+
     Args:
       directory: the directory to change to
     """
-    # from http://benno.id.au/blog/2013/01/20/withfail
     cwd = os.getcwd()
     os.chdir(directory)
     try:
@@ -308,25 +311,52 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
     """Creates a tarfile in the current directory.
 
     Args:
+      tar_binary: the full path to the tar binary
       tarfile_name: the name of the tarfile to create, including extension
       component_files: a list of filenames to put in that tarfile
 
     Raises:
       SystemExit if anything fails
     """
-    command = []
-    subprocess.check_call(command)
+    if os.path.exists(tarfile_name):
+        logging.error('The file %s/%s already exists, which is preventing the '
+                      'creation of another file of the same name',
+                      os.getcwd(), tarfile_name)
+        sys.exit(1)
+    command = [tar_binary, 'cfz', tarfile_name] + component_files
+    try:
+        subprocess.check_call(command)
+    except subprocess.CalledProcessError as error:
+        logging.error('tarfile creation ("%s") failed: %s', ' '.join(command),
+                      str(error))
+        sys.exit(1)
+    if not os.path.exists(tarfile_name):
+        logging.error('The tarfile %s/%s was not successfully created',
+                      os.getcwd(), tarfile_name)
+        sys.exit(1)
+
+
+def normalize_hostname(host):
+    """Strips -measurement-lab.org from the hostname if it exists.
+
+    Existing files have names like: 20150706T000000Z-mlab1-acc01-ndt-0000.tgz
+    Make the host name conform to this standard by removing a trailing
+    '-measurement-lab.org' if it is present.
+    """
+    if host.endswith('-measurement-lab.org'):
+        host = host[:-len('-measurement-lab.org')]
+    return host
 
 
 def create_tarfiles(tar_binary, directory, day, host, experiment,
                     max_uncompressed_size):
-    # Existing files have names like: 20150706T000000Z-mlab1-acc01-ndt-0000.tgz
-    # Make the host name conform to this standard by removing a trailing
-    # '-measurement-lab.org' if it is present.
-    if host.endswith('-measurement-lab.org'):
-        new_host, _, empty = host.partition('-measurement-lab.org')
-        assert len(empty) == 0, "Bad hostname: '%s'" % host
-        host = new_host
+    """Create tarfiles, and yield the name of each tarfile as it is made.
+
+    Args:
+      tar_binary: the full pathname for the tar binary
+      directory: the directory at the root of the file hierarchy
+    """
+    host = normalize_hostname(host)
     filename_prefix = '%d%02d%02dT000000Z-%s-%s-' % (day.year, day.month,
                                                      day.day, host, experiment)
     filename_suffix = '.tgz'
@@ -338,11 +368,11 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
         for filename in sorted(os.listdir(day_dir)):
             filename = os.path.join(day_dir, filename)
             filesize = os.stat(filename).st_size
-            if (tarfile_files and 
-                tarfile_size + filesize > max_uncompressed_size):
+            if (tarfile_files and
+                    tarfile_size + filesize > max_uncompressed_size):
                 tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                              filename_suffix)
-                create_tarfile(tarfile_name, tarfile_files)
+                create_tarfile(tar_binary, tarfile_name, tarfile_files)
                 yield tarfile_name
                 tarfile_files = []
                 tarfile_size = 0
@@ -350,10 +380,10 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
             tarfile_files.append(filename)
             tarfile_size += filesize
         if tarfile_files:
-          tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
-                                       filename_suffix)
-          create_tarfile(tarfile_name, tarfile_files)
-          yield tarfile_name
+            tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
+                                         filename_suffix)
+            create_tarfile(tar_binary, tarfile_name, tarfile_files)
+            yield tarfile_name
 
 
 def upload_tarfile(tgz_filename):  # pragma: no cover
