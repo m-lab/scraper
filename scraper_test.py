@@ -72,14 +72,9 @@ class TestScraper(unittest.TestCase):
             '--rsync_host', rsync_host, '--lockfile_dir', lockfile_dir,
             '--rsync_module', rsync_module, '--data_dir', data_dir,
             '--spreadsheet', spreadsheet])
-        self.assertEqual(args.rsync_host, rsync_host)
-        self.assertEqual(args.lockfile_dir, lockfile_dir)
-        self.assertEqual(args.rsync_module, rsync_module)
-        self.assertEqual(args.data_dir, data_dir)
-        self.assertEqual(args.rsync_binary, rsync_binary)
-        self.assertEqual(args.rsync_port, rsync_port)
-        self.assertEqual(args.spreadsheet, spreadsheet)
-        self.assertEqual(args.max_uncompressed_size, max_uncompressed_size)
+        self.assertEqual(args.rsync_binary, '/usr/bin/rsync')
+        self.assertEqual(args.rsync_port, 7999)
+        self.assertEqual(args.max_uncompressed_size, 1000000000)
 
     def test_args_help(self):
         with self.assertRaises(SystemExit):
