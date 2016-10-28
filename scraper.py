@@ -282,6 +282,7 @@ def find_all_days_to_upload(localdir, high_water_mark):
 
 def create_tarballs(directory, day, host, experiment,
                     max_uncompressed_size):  # pragma: no cover
+    # TODO(pboothe)
     yield 'this is not a tarfile but it should be'
 
 
