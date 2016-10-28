@@ -361,6 +361,7 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
       directory: the directory at the root of the file hierarchy
     """
     host = normalize_hostname(host)
+    # Existing files have names like: 20150706T000000Z-mlab1-acc01-ndt-0000.tgz
     filename_prefix = '%d%02d%02dT000000Z-%s-%s-' % (day.year, day.month,
                                                      day.day, host, experiment)
     filename_suffix = '.tgz'
