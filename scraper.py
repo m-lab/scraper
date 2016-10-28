@@ -90,7 +90,7 @@ def parse_cmdline(args):
         '--rsync_binary',
         metavar='RSYNC',
         type=str,
-        default=['/usr/bin/rsync'],
+        default='/usr/bin/rsync',
         required=False,
         help='The location of the rsync binary (defaults to /usr/bin/rsync)')
     parser.add_argument(
@@ -114,7 +114,7 @@ def parse_cmdline(args):
         default=1000000000,
         required=False,
         help='The maximum number of bytes in an uncompressed tarfile (default '
-        'is 1e9 = 1,000,000,000 = 1 GB)')
+        'is 1,000,000,000 = 1 GB)')
     return parser.parse_args(args)
 
 
@@ -131,7 +131,6 @@ def list_rsync_files(rsync_binary, rsync_url):
     Args:
       rsync_binary: the full path location of rsync
       rsync_url: the rsync:// url to download the list from
-      destination: the directory on the local host to put the files
 
     Returns:
       a list of filenames
@@ -139,12 +138,13 @@ def list_rsync_files(rsync_binary, rsync_url):
     try:
         logging.info('rsync file list discovery from %s', rsync_url)
         command = [rsync_binary, '--list-only', '-4', '-r', rsync_url]
-        logging.info('Listing files on server with the command: %s', command)
+        logging.info('Listing files on server with the command: %s',
+                     ' '.join(command))
         lines = subprocess.check_output(command).splitlines()
         files = []
         for line in lines:
-            chunks = line.split(None,
-                                4)  # None is a special whitespace arg for split
+            # None is a special whitespace arg for split
+            chunks = line.split(None, 4)
             if len(chunks) != 5:
                 logging.error('Bad line in output: %s', line)
                 continue
