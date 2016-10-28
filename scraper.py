@@ -280,7 +280,8 @@ def find_all_days_to_upload(localdir, high_water_mark):
                                   date_dir, verr)
 
 
-def create_tarballs(directory, day, host, experiment, max_uncompressed_size):
+def create_tarballs(directory, day, host, experiment,
+                    max_uncompressed_size):  # pragma: no cover
     yield 'this is not a tarfile but it should be'
 
 
