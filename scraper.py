@@ -108,6 +108,14 @@ def parse_cmdline(args):
         help='The google doc ID of the spreadsheet used to sync download '
         'information with the nodes.')
     parser.add_argument(
+        '--tar_binary',
+        metavar='TAR',
+        type=str,
+        default='/bin/tar',
+        required=False,
+        help='The maximum number of bytes in an uncompressed tarfile (default '
+        'is 1e9 = 1,000,000,000 = 1 GB)')
+    parser.add_argument(
         '--max_uncompressed_size',
         metavar='SIZE',
         type=int,
@@ -280,13 +288,75 @@ def find_all_days_to_upload(localdir, high_water_mark):
                                   date_dir, verr)
 
 
-def create_tarballs(directory, day, host, experiment,
-                    max_uncompressed_size):  # pragma: no cover
-    # TODO(pboothe)
-    yield 'this is not a tarfile but it should be'
+@contextlib.contextmanager
+def chdir(directory):
+    """Change the working directory for the duration of a `with` statement.
+
+    Args:
+      directory: the directory to change to
+    """
+    # from http://benno.id.au/blog/2013/01/20/withfail
+    cwd = os.getcwd()
+    os.chdir(directory)
+    try:
+        yield
+    finally:
+        os.chdir(cwd)
 
 
-def upload_tarball(tgz_filename):  # pragma: no cover
+def create_tarfile(tar_binary, tarfile_name, component_files):
+    """Creates a tarfile in the current directory.
+
+    Args:
+      tarfile_name: the name of the tarfile to create, including extension
+      component_files: a list of filenames to put in that tarfile
+
+    Raises:
+      SystemExit if anything fails
+    """
+    command = []
+    subprocess.check_call(command)
+
+
+def create_tarfiles(tar_binary, directory, day, host, experiment,
+                    max_uncompressed_size):
+    # Existing files have names like: 20150706T000000Z-mlab1-acc01-ndt-0000.tgz
+    # Make the host name conform to this standard by removing a trailing
+    # '-measurement-lab.org' if it is present.
+    if host.endswith('-measurement-lab.org'):
+        new_host, _, empty = host.partition('-measurement-lab.org')
+        assert len(empty) == 0, "Bad hostname: '%s'" % host
+        host = new_host
+    filename_prefix = '%d%02d%02dT000000Z-%s-%s-' % (day.year, day.month,
+                                                     day.day, host, experiment)
+    filename_suffix = '.tgz'
+    day_dir = '%d/%02d/%02d' % (day.year, day.month, day.day)
+    tarfile_size = 0
+    tarfile_files = []
+    tarfile_index = 0
+    with chdir(directory):
+        for filename in sorted(os.listdir(day_dir)):
+            filename = os.path.join(day_dir, filename)
+            filesize = os.stat(filename).st_size
+            if (tarfile_files and 
+                tarfile_size + filesize > max_uncompressed_size):
+                tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
+                                             filename_suffix)
+                create_tarfile(tarfile_name, tarfile_files)
+                yield tarfile_name
+                tarfile_files = []
+                tarfile_size = 0
+                tarfile_index += 1
+            tarfile_files.append(filename)
+            tarfile_size += filesize
+        if tarfile_files:
+          tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
+                                       filename_suffix)
+          create_tarfile(tarfile_name, tarfile_files)
+          yield tarfile_name
+
+
+def upload_tarfile(tgz_filename):  # pragma: no cover
     # TODO(pboothe)
     pass
 
@@ -331,10 +401,10 @@ def main():  # pragma: no cover
     # and delete the local copies of all successfully-uploaded data.
     new_high_water_mark = max_new_high_water_mark()
     for day in find_all_days_to_upload(destination, new_high_water_mark):
-        for tgz_filename in create_tarballs(destination, day, args.rsync_host,
-                                            args.rsync_module,
+        for tgz_filename in create_tarfiles(args.tar_binary, destination, day,
+                                            args.rsync_host, args.rsync_module,
                                             args.max_uncompressed_size):
-            upload_tarball(tgz_filename)
+            upload_tarfile(tgz_filename)
             os.remove(tgz_filename)
         update_high_water_mark(args.spreadsheet, rsync_url, day)
         remove_datafiles(destination, day)
