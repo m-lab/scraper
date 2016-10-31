@@ -112,7 +112,7 @@ BADBADBAD
     def test_list_rsync_files_fails(self):
         with self.assertRaises(SystemExit):
             scraper.list_rsync_files('/bin/false', 'localhost')
-            self.fail('Should not reach this line')
+            self.fail('Should not reach this line')  # pragma: no cover
 
     def test_remove_older_files(self):
         files = [
@@ -398,5 +398,5 @@ BADBADBAD
             shutil.rmtree(temp_d)
 
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     unittest.main()
