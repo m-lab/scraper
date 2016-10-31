@@ -11,7 +11,7 @@
     then
         COVERAGE=python-coverage
     fi
-    $COVERAGE report
+    $COVERAGE report -m
     echo
     echo 'The Python linter found the following issues:'
     pylint --rcfile=pylintrc --reports=n *.py
