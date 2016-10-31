@@ -1,0 +1,31 @@
+#!/bin/bash
+
+# To make git run unit tests and lint tests, softlink this file into the
+# .git/hooks directory.  The following command will get that done:
+#   ln -s ../../pre-commit .git/hooks/pre-commit
+
+# Run unit tests
+COVERAGE=coverage
+if [ z`which coverage` = z ]
+then
+    COVERAGE=python-coverage
+fi
+if $COVERAGE run --source='.' -m unittest discover --pattern='*_test.py' > /dev/null
+then
+    true
+else
+    echo "TESTS FAILED" 1>&2
+    exit 1
+fi
+
+# Run everything through the linter
+pylint --rcfile=pylintrc --reports=n *.py > /dev/null
+# pylint return codes described here: 
+#   https://lists.logilab.org/pipermail/python-projects/2009-November/002068.html
+# We only care about fatal messages and errors
+if [ $[ $? & 3 ] -ne 0 ]
+then
+  echo "LINTER FAILED" 1>&2
+  echo "Fix all errors and fatal messages" 1>&2
+  exit 1
+fi
