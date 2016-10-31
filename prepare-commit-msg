@@ -5,12 +5,6 @@
 #   ln -s ../../prepare-commit-msg .git/hooks/prepare-commit-msg
 
 (
-    echo 'The Python formatter recommends the following changes:'
-    pyformat -d -s 4 *.py
-    echo
-    echo 'The Python linter found the following issues:'
-    pylint --rcfile=pylintrc --reports=n *.py
-    echo
     echo 'Test coverage is as follows:'
     COVERAGE=coverage
     if [ z`which coverage` = z ]
@@ -18,4 +12,10 @@
         COVERAGE=python-coverage
     fi
     $COVERAGE report
+    echo
+    echo 'The Python linter found the following issues:'
+    pylint --rcfile=pylintrc --reports=n *.py
+    echo
+    echo 'The Python formatter recommends the following changes:'
+    pyformat -d -s 4 *.py
 ) | sed -e 's/^/# /' >> $1
