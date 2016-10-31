@@ -2,12 +2,20 @@
 
 # To make git run unit tests and lint tests, softlink this file into the
 # .git/hooks directory.  The following command will get that done:
-#   ln -s ../../prepare-commit-msg .git/hooks/prepare-commit-msg 
+#   ln -s ../../prepare-commit-msg .git/hooks/prepare-commit-msg
 
 (
-  echo '# The Python formatter recommends the following changes:'
-  pyformat -d -s 4 *.py | sed -e 's/^/# /'
-  echo '#'
-  echo '# The Python linter found the following issues:'
-  pylint --rcfile=pylintrc --reports=n *.py | sed -e 's/^/# /'
-) >> $1
+    echo 'The Python formatter recommends the following changes:'
+    pyformat -d -s 4 *.py
+    echo
+    echo 'The Python linter found the following issues:'
+    pylint --rcfile=pylintrc --reports=n *.py
+    echo
+    echo 'Test coverage is as follows:'
+    COVERAGE=coverage
+    if [ z`which coverage` = z ]
+    then
+        COVERAGE=python-coverage
+    fi
+    $COVERAGE report
+) | sed -e 's/^/# /' >> $1
