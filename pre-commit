@@ -15,7 +15,7 @@ if ! $COVERAGE run --source='.' -m unittest discover --pattern='*_test.py'; then
 fi
 
 # Run everything through the linter
-pylint --rcfile=pylintrc --reports=n *.py > /dev/null
+pylint --rcfile=pylintrc --reports=n *.py
 # pylint return codes described here: 
 #   https://lists.logilab.org/pipermail/python-projects/2009-November/002068.html
 # We only care about fatal messages and errors, the existence of which are

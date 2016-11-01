@@ -30,7 +30,11 @@ import subprocess
 import sys
 import tempfile
 
+
+import apiclient
 import fasteners
+import httplib2
+import oauth2client
 
 
 def acquire_lock_or_die(lockfile):
@@ -81,6 +85,7 @@ def parse_cmdline(args):
       the results of ArgumentParser.parse_args
     """
     parser = argparse.ArgumentParser(
+        parents=[oauth2client.tools.argparser],
         description='Scrape a single experiment at a site, upload the results '
         'if enough time has passed.')
     parser.add_argument(
@@ -126,7 +131,7 @@ def parse_cmdline(args):
         '--spreadsheet',
         metavar='URL',
         type=str,
-        required=True,
+        default='143pU25GJidW2KZ_93hgzHdqTqq22wgdxR_3tt3dvrJY',
         help='The google doc ID of the spreadsheet used to sync download '
         'information with the nodes.')
     parser.add_argument(
@@ -196,20 +201,18 @@ def get_progress_from_spreadsheet(_spreadsheet, _rsync_url):  # pragma: no cover
 
 
 def remove_older_files(date, files):
-    """Creates a new list with all files at least as old as `date` removed.
+    """Yields all well-formed filenames newer than `date`.
 
     Args:
       date: the date of the last day to remove from consideration
       files: the list of filenames
 
-    Returns:
-      a filtered list of filenames
+    Yields:
+      a sequence of filenames
     """
-    filtered = []
     for fname in files:
         if fname.count('/') < 3:
-            logging.info('Ignoring %s on the assumption it is a directory',
-                         fname)
+            logging.info('Ignoring %s', fname)
             continue
         year, month, day, _ = fname.split('/', 3)
         if not (year.isdigit() and month.isdigit() and day.isdigit()):
@@ -217,10 +220,16 @@ def remove_older_files(date, files):
                 'Bad filename. Was supposed to be YYYY/MM/DD, but was %s',
                 fname)
             continue
-        # Pass in a radix to guard against zero-padded 8 and 9
-        if datetime.date(int(year, 10), int(month, 10), int(day, 10)) > date:
-            filtered.append(fname)
-    return filtered
+        try:
+            # Pass in a radix to guard against zero-padded 8 and 9
+            year = int(year, 10)
+            month = int(month, 10)
+            day = int(day, 10)
+            if datetime.date(year, month, day) > date:
+                yield fname
+        except ValueError as verr:
+            logging.warning('Bad filename (%s) caused bad date: %s', fname,
+                            verr)
 
 
 def download_files(rsync_binary, rsync_url, files, destination):
@@ -233,12 +242,9 @@ def download_files(rsync_binary, rsync_url, files, destination):
     Args:
       rsync_binary: The full path to `rsync`
       rsync_url: The url from which to retrieve the files
-      files: a list of filenames to retrieve
+      files: an iterable of filenames to retrieve
       destination: the directory on the local host to put the files
     """
-    if not files:
-        logging.warning('No files to be downloaded from %s', rsync_url)
-        return
     # Rsync all the files that are new enough for us to care about
     with tempfile.NamedTemporaryFile() as temp:
         # Write the list of files to a tempfile, so as not to have to worry
@@ -246,6 +252,9 @@ def download_files(rsync_binary, rsync_url, files, destination):
         for fname in files:
             print >> temp, fname
         temp.flush()
+        if os.stat(temp.name).st_size == 0:
+            logging.warning('No files to be downloaded from %s', rsync_url)
+            return
         # Download all the files.
         try:
             logging.info('Downloading %d files', len(files))
@@ -429,12 +438,85 @@ def upload_tarfile(_tgz_filename):  # pragma: no cover
 
 def update_high_water_mark(_spreadsheet, _rsync_url, _day):  # pragma: no cover
     """Updates the date before which it is safe to delete data."""
-    # TODO(pboothe)
+
+
+def cell_to_date(cell_text):
+    """Converts a cell of the form 'x2016-01-28' into a date."""
+    assert cell_text.count('-') == 2 and cell_text[0] == 'x'
+    year, month, day = cell_text[1:].split('-')
+    assert year.isdigit() and month.isdigit() and day.isdigit()
+    return datetime.date(int(year, 10), int(month, 10), int(day, 10))
+
+
+def get_progress_from_spreadsheet(credentials,
+                                  spreadsheet,
+                                  rsync_url,
+                                  default_date=datetime.date(2009, 1, 1)):
+    http = credentials.authorize(httplib2.Http())
+    discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
+                     'version=v4')
+    service = apiclient.discovery.build(
+        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url)
+    range_name = 'Drop box status (auto updated)!A:F'
+    # Apparently the apiclient library confuses the linter.
+    # pylint: disable=no-member
+    result = service.spreadsheets().values().get(spreadsheetId=spreadsheet,
+                                                 range=range_name).execute()
+    # pylint: enable=no-member
+    values = result.get('values', [])
+    if not values:
+        logging.critical('No data found in the given spreadsheet')
+        sys.exit(1)
+    header = values[0]
+    rsync_index = header.index(u'dropboxrsyncaddress')
+    date_index = header.index(u'lastsuccessfulcollection')
+    for row in values[1:]:
+        if row[rsync_index] == rsync_url:
+            date = row[date_index]
+            if not date:
+                logging.warning('No date in the spreadsheet for %s', rsync_url)
+                return default_date
+            try:
+                return cell_to_date(date)
+            except (AssertionError, ValueError) as exc:
+                logging.warning('Bad date string "%s" caused error: %s', date,
+                                exc)
+                return default_date
+    logging.warning('No row found for %s', rsync_url)
+    return default_date
 
 
 def remove_datafiles(_directory, _day):  # pragma: no cover
     """Removes datafiles from the local disk."""
-    # TODO(pboothe)
+
+
+def get_credentials(flags):
+    """Gets valid user credentials from storage.
+
+    If nothing has been stored, or if the stored credentials are invalid,
+    the OAuth2 flow is completed to obtain the new credentials.
+
+    Returns:
+        Credentials, the obtained credential.
+    """
+    client_secret_file = 'client_secret.json'
+    application_name = 'MLab Scraper'
+    scopes = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+    home_dir = os.path.expanduser('~')
+    credential_dir = os.path.join(home_dir, '.credentials')
+    if not os.path.exists(credential_dir):
+        os.makedirs(credential_dir)
+    credential_path = os.path.join(credential_dir,
+                                   'sheets.scraper-measurement-lab.json')
+    store = oauth2client.file.Storage(credential_path)
+    credentials = store.get()
+    if not credentials or credentials.invalid:
+        flow = oauth2client.client.flow_from_clientsecrets(client_secret_file,
+                                                           scopes)
+        flow.user_agent = application_name
+        credentials = oauth2client.tools.run_flow(flow, store, flags)
+        logging.info('Storing credentials to %s', credential_path)
+    return credentials
 
 
 def main():  # pragma: no cover
@@ -452,6 +534,15 @@ def main():  # pragma: no cover
     lock = acquire_lock_or_die(lockfile)
     atexit.register(lock.release)
 
+    rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
+                                          args.rsync_module)
+
+    # Get credentials for the Google Sheets dropbox and use them to find the
+    # high water mark for uploaded data.
+    credentials = get_credentials(args)
+    progress_level = get_progress_from_spreadsheet(credentials,
+                                                   args.spreadsheet, rsync_url)
+    sys.exit(1)
     # If the destination directory does not exist, make it exist.
     destination = os.path.join(args.data_dir, args.rsync_host,
                                args.rsync_module)
@@ -459,12 +550,9 @@ def main():  # pragma: no cover
         os.makedirs(destination)
 
     # Get the file list and then the files from the server.
-    rsync_url = 'rsync://{}:{}/{}/'.format(args.rsync_host, args.rsync_port,
-                                           args.rsync_module)
-    files = list_rsync_files(args.rsync_binary, rsync_url)
-    progress_level = get_progress_from_spreadsheet(args.spreadsheet, rsync_url)
-    files = remove_older_files(progress_level, files)
-    download_files(args.rsync_binary, rsync_url, files, destination)
+    all_files = list_rsync_files(args.rsync_binary, rsync_url)
+    newer_files = remove_older_files(progress_level, all_files)
+    download_files(args.rsync_binary, rsync_url, newer_files, destination)
 
     # Tar up what we have for each un-uploaded day that is sufficiently in the
     # past (up to and including the new high water mark), upload what we have,
