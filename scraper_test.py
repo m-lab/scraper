@@ -141,8 +141,9 @@ BADBADBAD
             '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:50264.s2c_snaplog.gz',
             '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:52410.c2s_snaplog.gz'
         ]
-        filtered = scraper.remove_older_files(
-            datetime.datetime(2016, 10, 25).date(), files)
+        filtered = list(
+            scraper.remove_older_files(
+                datetime.datetime(2016, 10, 25).date(), files))
         self.assertEqual(filtered, [
             '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:35192.s2c_snaplog.gz',
             '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:39482.c2s_snaplog.gz',
