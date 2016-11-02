@@ -27,22 +27,24 @@ import scraper
 class TestScraper(unittest.TestCase):
 
     def test_file_locking(self):
-        tempd = tempfile.mkdtemp()
-        self.assertTrue(os.path.exists(tempd))
-        lockfile = tempd + '/testlockfile'
-        scraper.acquire_lock_or_die(lockfile)
-        self.assertTrue(os.path.exists(lockfile))
         try:
+            temp_d = tempfile.mkdtemp()
+            lockfile = os.path.join(temp_d, 'testlockfile')
             scraper.acquire_lock_or_die(lockfile)
-            self.fail('Should have died before now')
-        except AssertionError:
-            pass
-        os.remove(lockfile)
-        scraper.acquire_lock_or_die(lockfile)
-        os.remove(lockfile)
-        self.assertFalse(os.path.exists(lockfile))
-        os.rmdir(tempd)
-        self.assertFalse(os.path.exists(tempd))
+            self.assertTrue(os.path.exists(lockfile))
+        finally:
+            shutil.rmtree(temp_d)
+
+    @mock.patch('fasteners.InterProcessLock.acquire')
+    def test_file_locking_failure_causes_exit(self, patched_acquire):
+        try:
+            temp_d = tempfile.mkdtemp()
+            lockfile = os.path.join(temp_d, 'testlockfile')
+            patched_acquire.return_value = False
+            with self.assertRaises(SystemExit):
+                scraper.acquire_lock_or_die(lockfile)
+        finally:
+            shutil.rmtree(temp_d)
 
     def test_args(self):
         rsync_host = 'example.com'

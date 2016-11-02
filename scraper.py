@@ -29,6 +29,8 @@ import subprocess
 import sys
 import tempfile
 
+import fasteners
+
 
 def acquire_lock_or_die(lockfile):
     """Prevents long-running downloads from being stepped on.
@@ -39,14 +41,14 @@ def acquire_lock_or_die(lockfile):
     Args:
       lockfile: the filename of the file to create
     """
-    # This is bad locking. But we're looking to protect binaries
-    # that are running hours apart from one another, not two
-    # binaries which are racing for the same file at startup.
-    assert_msg = ('Lockfile %s is present. Old job is likely still running. '
-                  'Aborting.' % lockfile)
-    assert not os.path.exists(lockfile), assert_msg
+    lock = fasteners.InterProcessLock(lockfile)
+    if not lock.acquire(blocking=False):
+        logging.critical('Lock on %s could not be acquired. Old job is likely '
+                         'still running. Aborting.', lockfile)
+        sys.exit(1)
     with file(lockfile, 'w') as lockfile:
         print >> lockfile, 'PID of scraper is', os.getpid()
+    return lock
 
 
 def parse_cmdline(args):
@@ -118,6 +120,10 @@ def parse_cmdline(args):
     return parser.parse_args(args)
 
 
+# Use IPv4, compression, and limit total bandwidth usage to 10 Mbps
+RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000']
+
+
 def list_rsync_files(rsync_binary, rsync_url):
     """Get a list of all files in the rsync module on the server.
 
@@ -137,7 +143,7 @@ def list_rsync_files(rsync_binary, rsync_url):
     """
     try:
         logging.info('rsync file list discovery from %s', rsync_url)
-        command = [rsync_binary, '--list-only', '-4', '-r', rsync_url]
+        command = [rsync_binary, '--list-only', '-r'] + RSYNC_ARGS + [rsync_url]
         logging.info('Listing files on server with the command: %s',
                      ' '.join(command))
         lines = subprocess.check_output(command).splitlines()
@@ -214,10 +220,8 @@ def download_files(rsync_binary, rsync_url, files, destination):
         # Download all the files.
         try:
             logging.info('Downloading %d files', len(files))
-            command = [
-                rsync_binary, '--files-from', temp.name, '-4', rsync_url,
-                destination
-            ]
+            command = [rsync_binary, '--files-from', temp.name
+                      ] + RSYNC_ARGS + [rsync_url, destination]
             subprocess.check_call(command)
         except subprocess.CalledProcessError as error:
             logging.error('rsync download failed: %s', str(error))
@@ -309,8 +313,8 @@ def main():  # pragma: no cover
     lockfile = os.path.join(
         args.lockfile_dir,
         '{}_{}.lock'.format(args.rsync_host, args.rsync_module))
-    acquire_lock_or_die(lockfile)
-    atexit.register(os.remove, lockfile)
+    lock = acquire_lock_or_die(lockfile)
+    atexit.register(lock.release)
 
     # If the destination directory does not exist, make it exist.
     destination = os.path.join(args.data_dir, args.rsync_host,
