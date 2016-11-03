@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 """Download all new data from an MLab node, then upload what can be uploaded.
 
 This is a single-shot program to download data from an MLab node and then upload
@@ -35,6 +36,7 @@ import apiclient
 import fasteners
 import httplib2
 import oauth2client
+from oauth2client.contrib import gce
 
 
 def acquire_lock_or_die(lockfile):
@@ -149,6 +151,11 @@ def parse_cmdline(args):
         required=False,
         help='The maximum number of bytes in an uncompressed tarfile (default '
         'is 1,000,000,000 = 1 GB)')
+    parser.add_argument(
+        '--key',
+        metavar='KEY',
+        type=str,
+        help='The API key to use for access to resources')
     return parser.parse_args(args)
 
 
@@ -448,7 +455,8 @@ def cell_to_date(cell_text):
     return datetime.date(int(year, 10), int(month, 10), int(day, 10))
 
 
-def get_progress_from_spreadsheet(credentials,
+def get_progress_from_spreadsheet(api_key,
+                                  credentials,
                                   spreadsheet,
                                   rsync_url,
                                   default_date=datetime.date(2009, 1, 1)):
@@ -456,7 +464,7 @@ def get_progress_from_spreadsheet(credentials,
     discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
                      'version=v4')
     service = apiclient.discovery.build(
-        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url)
+        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url, key=api_key)
     range_name = 'Drop box status (auto updated)!A:F'
     # Apparently the apiclient library confuses the linter.
     # pylint: disable=no-member
@@ -490,35 +498,6 @@ def remove_datafiles(_directory, _day):  # pragma: no cover
     """Removes datafiles from the local disk."""
 
 
-def get_credentials(flags):
-    """Gets valid user credentials from storage.
-
-    If nothing has been stored, or if the stored credentials are invalid,
-    the OAuth2 flow is completed to obtain the new credentials.
-
-    Returns:
-        Credentials, the obtained credential.
-    """
-    client_secret_file = 'client_secret.json'
-    application_name = 'MLab Scraper'
-    scopes = 'https://www.googleapis.com/auth/spreadsheets.readonly'
-    home_dir = os.path.expanduser('~')
-    credential_dir = os.path.join(home_dir, '.credentials')
-    if not os.path.exists(credential_dir):
-        os.makedirs(credential_dir)
-    credential_path = os.path.join(credential_dir,
-                                   'sheets.scraper-measurement-lab.json')
-    store = oauth2client.file.Storage(credential_path)
-    credentials = store.get()
-    if not credentials or credentials.invalid:
-        flow = oauth2client.client.flow_from_clientsecrets(client_secret_file,
-                                                           scopes)
-        flow.user_agent = application_name
-        credentials = oauth2client.tools.run_flow(flow, store, flags)
-        logging.info('Storing credentials to %s', credential_path)
-    return credentials
-
-
 def main():  # pragma: no cover
     """Run the download and upload from end-to-end.
 
@@ -539,9 +518,10 @@ def main():  # pragma: no cover
 
     # Get credentials for the Google Sheets dropbox and use them to find the
     # high water mark for uploaded data.
-    credentials = get_credentials(args)
-    progress_level = get_progress_from_spreadsheet(credentials,
-                                                   args.spreadsheet, rsync_url)
+    creds = gce.AppAssertionCredentials(
+        scope='https://www.googleapis.com/auth/spreadsheets')
+    progress_level = get_progress_from_spreadsheet(args.key, creds, args.spreadsheet,
+                                                   rsync_url)
     sys.exit(1)
     # If the destination directory does not exist, make it exist.
     destination = os.path.join(args.data_dir, args.rsync_host,
