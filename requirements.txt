@@ -1,3 +1,4 @@
+fasteners
 freezegun
 google-api-python-client
 mock
