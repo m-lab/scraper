@@ -463,8 +463,9 @@ def get_progress_from_spreadsheet(api_key,
     http = credentials.authorize(httplib2.Http())
     discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
                      'version=v4')
+###### ????
     service = apiclient.discovery.build(
-        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url, key=api_key)
+        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url, credentials=credentials)
     range_name = 'Drop box status (auto updated)!A:F'
     # Apparently the apiclient library confuses the linter.
     # pylint: disable=no-member
