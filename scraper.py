@@ -116,8 +116,7 @@ def parse_cmdline(args):
         type=str,
         default='/bin/tar',
         required=False,
-        help='The maximum number of bytes in an uncompressed tarfile (default '
-        'is 1e9 = 1,000,000,000 = 1 GB)')
+        help='The location of the tar binary (defaults to /bin/tar)')
     parser.add_argument(
         '--max_uncompressed_size',
         metavar='SIZE',
