@@ -201,15 +201,14 @@ BADBADBAD
             os.makedirs(os.path.join(temp_d, '2015/10/31'))
             open(os.path.join(temp_d, '2015/9000'), 'w').write('hello\n')
             open(os.path.join(temp_d, '2015/10/9000'), 'w').write('hello\n')
-            os.makedirs(os.path.join(temp_d, '2015/10/9001'))
             os.makedirs(os.path.join(temp_d, '2016/07/05'))
             os.makedirs(os.path.join(temp_d, '2016/07/monkey'))
             os.makedirs(os.path.join(temp_d, '2016/monkey/monkey'))
             os.makedirs(os.path.join(temp_d, 'monkey/monkey/monkey'))
             os.makedirs(os.path.join(temp_d, '2016/07/06'))
+            os.makedirs(os.path.join(temp_d, '2015/10/9001'))
             os.makedirs(os.path.join(temp_d, '2016/07/07'))
-            to_upload = list(
-                sorted(scraper.find_all_days_to_upload(temp_d, date)))
+            to_upload = list(scraper.find_all_days_to_upload(temp_d, date))
             self.assertEqual(to_upload, [
                 datetime.date(2015, 10, 31), datetime.date(2016, 7, 5),
                 datetime.date(2016, 7, 6)
@@ -242,12 +241,15 @@ BADBADBAD
         finally:
             shutil.rmtree(temp_d)
 
-    def test_normalize_hostname(self):
+    def test_node_and_site_no_suffix(self):
         self.assertEqual(
-            scraper.normalize_hostname('mlab1-atl02'), 'mlab1-atl02')
+            scraper.node_and_site('ndt.iupui.mlab1.atl02'),
+            ['mlab1', 'atl02'])
+
+    def test_node_and_site_with_suffix(self):
         self.assertEqual(
-            scraper.normalize_hostname('mlab1-atl02-measurement-lab.org'),
-            'mlab1-atl02')
+            scraper.node_and_site('mlab1.atl02.measurement-lab.org'),
+            ['mlab1', 'atl02'])
 
     def test_create_tarfile(self):
         try:
@@ -324,7 +326,7 @@ BADBADBAD
                 sorted(
                     scraper.create_tarfiles('/bin/tar', temp_d,
                                             datetime.date(2016, 1, 28),
-                                            'mlab9-dne04', 'exper', 100000)))
+                                            'mlab9.dne04', 'exper', 100000)))
             for fname in files:
                 self.assertTrue(os.path.isfile(os.path.join(temp_d, fname)))
             self.assertEqual(files,
@@ -361,7 +363,7 @@ BADBADBAD
                 sorted(
                     scraper.create_tarfiles('/bin/tar', temp_d,
                                             datetime.date(2016, 1, 28),
-                                            'mlab9-dne04', 'exper', 4)))
+                                            'mlab9.dne04', 'exper', 4)))
             for fname in files:
                 self.assertTrue(os.path.isfile(os.path.join(temp_d, fname)))
             self.assertEqual(files, [

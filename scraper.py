@@ -151,7 +151,8 @@ def list_rsync_files(rsync_binary, rsync_url):
     """
     try:
         logging.info('rsync file list discovery from %s', rsync_url)
-        command = [rsync_binary, '--list-only', '-r'] + RSYNC_ARGS + [rsync_url]
+        command = [rsync_binary, '--list-only', '-r'] + \
+            RSYNC_ARGS + [rsync_url]
         logging.info('Listing files on server with the command: %s',
                      ' '.join(command))
         lines = subprocess.check_output(command).splitlines()
@@ -229,7 +230,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
         try:
             logging.info('Downloading %d files', len(files))
             command = [rsync_binary, '--files-from', temp.name
-                      ] + RSYNC_ARGS + [rsync_url, destination]
+                       ] + RSYNC_ARGS + [rsync_url, destination]
             subprocess.check_call(command)
         except subprocess.CalledProcessError as error:
             logging.error('rsync download failed: %s', str(error))
@@ -266,15 +267,15 @@ def find_all_days_to_upload(localdir, high_water_mark):
       a sequence of days that exist on the localhost and are old enough to be
       uploaded.
     """
-    for year in filter(str.isdigit, os.listdir(localdir)):
+    for year in sorted(filter(str.isdigit, os.listdir(localdir))):
         year_dir = os.path.join(localdir, year)
         if not os.path.isdir(year_dir):
             continue
-        for month in filter(str.isdigit, os.listdir(year_dir)):
+        for month in sorted(filter(str.isdigit, os.listdir(year_dir))):
             month_dir = os.path.join(localdir, year, month)
             if not os.path.isdir(month_dir):
                 continue
-            for day in filter(str.isdigit, os.listdir(month_dir)):
+            for day in sorted(filter(str.isdigit, os.listdir(month_dir))):
                 date_dir = os.path.join(localdir, year, month, day)
                 if not os.path.isdir(date_dir):
                     continue
@@ -339,30 +340,42 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
         sys.exit(1)
 
 
-def normalize_hostname(host):
-    """Strips -measurement-lab.org from the hostname if it exists.
+def node_and_site(host):
+    """Determine the host and site from the hostname.
 
-    Existing files have names like: 20150706T000000Z-mlab1-acc01-ndt-0000.tgz
-    Make the host name conform to this standard by removing a trailing
-    '-measurement-lab.org' if it is present.
+    Returns the host and site an contained in the hostname of the mlab
+    node.  Strips .measurement-lab.org from the hostname if it exists.
+    Existing files have names like 20150706T000000Z-
+    mlab1-acc01-ndt-0000.tgz and this function is designed to return the
+    pair ('mlab1', 'acc01') as derived from a hostname like
+    'ndt.iupui.mlab2.nuq1t.measurement-lab.org'
     """
-    if host.endswith('-measurement-lab.org'):
-        host = host[:-len('-measurement-lab.org')]
-    return host
+    if host.endswith('.measurement-lab.org'):
+        host = host[:-len('.measurement-lab.org')]
+    names = host.split('.')
+    assert len(names) >= 2, 'Bad name: %s' % host
+    return names[-2:]
 
 
 def create_tarfiles(tar_binary, directory, day, host, experiment,
                     max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
 
+    Because one day may contain a lot of data, we create a series of tarfiles,
+    none of which may contain more than max_uncompressed_size buytes of data.
+
     Args:
       tar_binary: the full pathname for the tar binary
       directory: the directory at the root of the file hierarchy
+      day: the date for the tarfile
+      host: the hostname for the tar file
+      experiment: the experiment with data contained in this tarfile
+      max_uncompressed_size: the max size of an individual tarfile
     """
-    host = normalize_hostname(host)
+    node, site = node_and_site(host)
     # Existing files have names like: 20150706T000000Z-mlab1-acc01-ndt-0000.tgz
-    filename_prefix = '%d%02d%02dT000000Z-%s-%s-' % (day.year, day.month,
-                                                     day.day, host, experiment)
+    filename_prefix = '%d%02d%02dT000000Z-%s-%s-%s-' % (
+        day.year, day.month, day.day, node, site, experiment)
     filename_suffix = '.tgz'
     day_dir = '%d/%02d/%02d' % (day.year, day.month, day.day)
     tarfile_size = 0
@@ -377,6 +390,7 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
                 tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                              filename_suffix)
                 create_tarfile(tar_binary, tarfile_name, tarfile_files)
+                logging.info('Created %s', tarfile_name)
                 yield tarfile_name
                 tarfile_files = []
                 tarfile_size = 0
@@ -387,6 +401,7 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
             tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                          filename_suffix)
             create_tarfile(tar_binary, tarfile_name, tarfile_files)
+            logging.info('Created %s', tarfile_name)
             yield tarfile_name
 
 
