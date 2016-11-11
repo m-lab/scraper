@@ -48,7 +48,7 @@ class TestScraper(unittest.TestCase):
             shutil.rmtree(temp_d)
 
     def test_args(self):
-        rsync_host = 'example.com'
+        rsync_host = 'mlab1.dne0t.measurement-lab.org'
         lockfile_dir = '/tmp/shouldnotexist/'
         rsync_module = 'ndt'
         data_dir = '/tmp/bigplaceforbackup'
@@ -241,15 +241,19 @@ BADBADBAD
         finally:
             shutil.rmtree(temp_d)
 
-    def test_node_and_site_no_suffix(self):
+    def test_node_and_site_failure(self):
+        with self.assertRaises(AssertionError):
+            scraper.node_and_site('ndt.iupui.mlab1.atl02.measurement-lab.com')
+
+    def test_node_and_site_with_prefix(self):
         self.assertEqual(
-            scraper.node_and_site('ndt.iupui.mlab1.atl02'),
-            ['mlab1', 'atl02'])
+            scraper.node_and_site('ndt.iupui.mlab1.atl02.measurement-lab.org'),
+            ('mlab1', 'atl02'))
 
     def test_node_and_site_with_suffix(self):
         self.assertEqual(
             scraper.node_and_site('mlab1.atl02.measurement-lab.org'),
-            ['mlab1', 'atl02'])
+            ('mlab1', 'atl02'))
 
     def test_create_tarfile(self):
         try:
@@ -324,7 +328,8 @@ BADBADBAD
             files = list(
                 scraper.create_tarfiles('/bin/tar', temp_d,
                                         datetime.date(2016, 1, 28),
-                                        'mlab9.dne04', 'exper', 100000))
+                                        'mlab9.dne04.measurement-lab.org',
+                                        'exper', 100000))
             self.assertEqual(files,
                              ['20160128T000000Z-mlab9-dne04-exper-0000.tgz'])
             with scraper.chdir(temp_d):
@@ -354,7 +359,8 @@ BADBADBAD
             files = list(
                 scraper.create_tarfiles('/bin/tar', temp_d,
                                         datetime.date(2016, 1, 28),
-                                        'mlab9.dne04', 'exper', 4))
+                                        'mlab9.dne04.measurement-lab.org',
+                                        'exper', 4))
             self.assertEqual(files, [
                 '20160128T000000Z-mlab9-dne04-exper-0000.tgz',
                 '20160128T000000Z-mlab9-dne04-exper-0001.tgz'

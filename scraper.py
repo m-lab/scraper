@@ -52,6 +52,25 @@ def acquire_lock_or_die(lockfile):
     return lock
 
 
+def assert_mlab_hostname(hostname):
+    """Verifies that the passed-in hostname is a valid MLab hostname.
+
+    This function is written in this way so that it can be used as part of
+    command-line argument parsing.  The hostname should be something like
+    mlab4.sea02.measurement-lab.org or perhaps
+    ndt.iupui.mlab1.nuq0t.measurement-lab.org
+
+    Returns:
+      The valid hostname
+
+    Raises:
+      AssertionError if it is not valid
+    """
+    assert hostname.endswith('.measurement-lab.org')
+    assert hostname.split('.') >= 4
+    return hostname
+
+
 def parse_cmdline(args):
     """Parse the commandline arguments.
 
@@ -67,7 +86,7 @@ def parse_cmdline(args):
     parser.add_argument(
         '--rsync_host',
         metavar='HOST',
-        type=str,
+        type=assert_mlab_hostname,
         required=True,
         help='The host to connect to over rsync')
     parser.add_argument(
@@ -95,14 +114,14 @@ def parse_cmdline(args):
         type=str,
         default='/usr/bin/rsync',
         required=False,
-        help='The location of the rsync binary (defaults to /usr/bin/rsync)')
+        help='The location of the rsync binary (default is /usr/bin/rsync)')
     parser.add_argument(
         '--rsync_port',
         metavar='PORT',
         type=int,
         default=7999,
         required=False,
-        help='The port on which the rsync server runs (defaults to 7999)')
+        help='The port on which the rsync server runs (default is 7999)')
     parser.add_argument(
         '--spreadsheet',
         metavar='URL',
@@ -116,7 +135,7 @@ def parse_cmdline(args):
         type=str,
         default='/bin/tar',
         required=False,
-        help='The location of the tar binary (defaults to /bin/tar)')
+        help='The location of the tar binary (default is /bin/tar)')
     parser.add_argument(
         '--max_uncompressed_size',
         metavar='SIZE',
@@ -350,11 +369,9 @@ def node_and_site(host):
     pair ('mlab1', 'acc01') as derived from a hostname like
     'ndt.iupui.mlab2.nuq1t.measurement-lab.org'
     """
-    if host.endswith('.measurement-lab.org'):
-        host = host[:-len('.measurement-lab.org')]
+    assert_mlab_hostname(host)
     names = host.split('.')
-    assert len(names) >= 2, 'Bad name: %s' % host
-    return names[-2:]
+    return (names[-4], names[-3])
 
 
 def create_tarfiles(tar_binary, directory, day, host, experiment,
