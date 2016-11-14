@@ -22,6 +22,7 @@ jobs running in a whole fleet of containers run by Google Container Engine.
 
 import argparse
 import atexit
+import contextlib
 import datetime
 import logging
 import os
@@ -51,6 +52,25 @@ def acquire_lock_or_die(lockfile):
     return lock
 
 
+def assert_mlab_hostname(hostname):
+    """Verifies that the passed-in hostname is a valid MLab hostname.
+
+    This function is written in this way so that it can be used as part of
+    command-line argument parsing.  The hostname should be something like
+    mlab4.sea02.measurement-lab.org or perhaps
+    ndt.iupui.mlab1.nuq0t.measurement-lab.org
+
+    Returns:
+      The valid hostname
+
+    Raises:
+      AssertionError if it is not valid
+    """
+    assert hostname.endswith('.measurement-lab.org')
+    assert hostname.split('.') >= 4
+    return hostname
+
+
 def parse_cmdline(args):
     """Parse the commandline arguments.
 
@@ -66,7 +86,7 @@ def parse_cmdline(args):
     parser.add_argument(
         '--rsync_host',
         metavar='HOST',
-        type=str,
+        type=assert_mlab_hostname,
         required=True,
         help='The host to connect to over rsync')
     parser.add_argument(
@@ -94,14 +114,14 @@ def parse_cmdline(args):
         type=str,
         default='/usr/bin/rsync',
         required=False,
-        help='The location of the rsync binary (defaults to /usr/bin/rsync)')
+        help='The location of the rsync binary (default is /usr/bin/rsync)')
     parser.add_argument(
         '--rsync_port',
         metavar='PORT',
         type=int,
         default=7999,
         required=False,
-        help='The port on which the rsync server runs (defaults to 7999)')
+        help='The port on which the rsync server runs (default is 7999)')
     parser.add_argument(
         '--spreadsheet',
         metavar='URL',
@@ -109,6 +129,13 @@ def parse_cmdline(args):
         required=True,
         help='The google doc ID of the spreadsheet used to sync download '
         'information with the nodes.')
+    parser.add_argument(
+        '--tar_binary',
+        metavar='TAR',
+        type=str,
+        default='/bin/tar',
+        required=False,
+        help='The location of the tar binary (default is /bin/tar)')
     parser.add_argument(
         '--max_uncompressed_size',
         metavar='SIZE',
@@ -143,7 +170,8 @@ def list_rsync_files(rsync_binary, rsync_url):
     """
     try:
         logging.info('rsync file list discovery from %s', rsync_url)
-        command = [rsync_binary, '--list-only', '-r'] + RSYNC_ARGS + [rsync_url]
+        command = [rsync_binary, '--list-only', '-r'] + \
+            RSYNC_ARGS + [rsync_url]
         logging.info('Listing files on server with the command: %s',
                      ' '.join(command))
         lines = subprocess.check_output(command).splitlines()
@@ -221,7 +249,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
         try:
             logging.info('Downloading %d files', len(files))
             command = [rsync_binary, '--files-from', temp.name
-                      ] + RSYNC_ARGS + [rsync_url, destination]
+                       ] + RSYNC_ARGS + [rsync_url, destination]
             subprocess.check_call(command)
         except subprocess.CalledProcessError as error:
             logging.error('rsync download failed: %s', str(error))
@@ -258,15 +286,15 @@ def find_all_days_to_upload(localdir, high_water_mark):
       a sequence of days that exist on the localhost and are old enough to be
       uploaded.
     """
-    for year in filter(str.isdigit, os.listdir(localdir)):
+    for year in sorted(filter(str.isdigit, os.listdir(localdir))):
         year_dir = os.path.join(localdir, year)
         if not os.path.isdir(year_dir):
             continue
-        for month in filter(str.isdigit, os.listdir(year_dir)):
+        for month in sorted(filter(str.isdigit, os.listdir(year_dir))):
             month_dir = os.path.join(localdir, year, month)
             if not os.path.isdir(month_dir):
                 continue
-            for day in filter(str.isdigit, os.listdir(month_dir)):
+            for day in sorted(filter(str.isdigit, os.listdir(month_dir))):
                 date_dir = os.path.join(localdir, year, month, day)
                 if not os.path.isdir(date_dir):
                     continue
@@ -284,13 +312,117 @@ def find_all_days_to_upload(localdir, high_water_mark):
                                   date_dir, verr)
 
 
-def create_tarballs(directory, day, host, experiment,
-                    max_uncompressed_size):  # pragma: no cover
-    # TODO(pboothe)
-    yield 'this is not a tarfile but it should be'
+@contextlib.contextmanager
+def chdir(directory):
+    """Change the working directory for the duration of a `with` statement.
+
+    From http://benno.id.au/blog/2013/01/20/withfail which fills a sort of
+    obvious niche that one would hope would exist as part of the os library.
+
+    Args:
+      directory: the directory to change to
+    """
+    cwd = os.getcwd()
+    os.chdir(directory)
+    try:
+        yield
+    finally:
+        os.chdir(cwd)
 
 
-def upload_tarball(tgz_filename):  # pragma: no cover
+def create_tarfile(tar_binary, tarfile_name, component_files):
+    """Creates a tarfile in the current directory.
+
+    Args:
+      tar_binary: the full path to the tar binary
+      tarfile_name: the name of the tarfile to create, including extension
+      component_files: a list of filenames to put in that tarfile
+
+    Raises:
+      SystemExit if anything fails
+    """
+    if os.path.exists(tarfile_name):
+        logging.error('The file %s/%s already exists, which is preventing the '
+                      'creation of another file of the same name',
+                      os.getcwd(), tarfile_name)
+        sys.exit(1)
+    command = [tar_binary, 'cfz', tarfile_name] + component_files
+    try:
+        subprocess.check_call(command)
+    except subprocess.CalledProcessError as error:
+        logging.error('tarfile creation ("%s") failed: %s', ' '.join(command),
+                      str(error))
+        sys.exit(1)
+    if not os.path.exists(tarfile_name):
+        logging.error('The tarfile %s/%s was not successfully created',
+                      os.getcwd(), tarfile_name)
+        sys.exit(1)
+
+
+def node_and_site(host):
+    """Determine the host and site from the hostname.
+
+    Returns the host and site an contained in the hostname of the mlab
+    node.  Strips .measurement-lab.org from the hostname if it exists.
+    Existing files have names like 20150706T000000Z-
+    mlab1-acc01-ndt-0000.tgz and this function is designed to return the
+    pair ('mlab1', 'acc01') as derived from a hostname like
+    'ndt.iupui.mlab2.nuq1t.measurement-lab.org'
+    """
+    assert_mlab_hostname(host)
+    names = host.split('.')
+    return (names[-4], names[-3])
+
+
+def create_tarfiles(tar_binary, directory, day, host, experiment,
+                    max_uncompressed_size):
+    """Create tarfiles, and yield the name of each tarfile as it is made.
+
+    Because one day may contain a lot of data, we create a series of tarfiles,
+    none of which may contain more than max_uncompressed_size buytes of data.
+
+    Args:
+      tar_binary: the full pathname for the tar binary
+      directory: the directory at the root of the file hierarchy
+      day: the date for the tarfile
+      host: the hostname for the tar file
+      experiment: the experiment with data contained in this tarfile
+      max_uncompressed_size: the max size of an individual tarfile
+    """
+    node, site = node_and_site(host)
+    # Existing files have names like: 20150706T000000Z-mlab1-acc01-ndt-0000.tgz
+    filename_prefix = '%d%02d%02dT000000Z-%s-%s-%s-' % (
+        day.year, day.month, day.day, node, site, experiment)
+    filename_suffix = '.tgz'
+    day_dir = '%d/%02d/%02d' % (day.year, day.month, day.day)
+    tarfile_size = 0
+    tarfile_files = []
+    tarfile_index = 0
+    with chdir(directory):
+        for filename in sorted(os.listdir(day_dir)):
+            filename = os.path.join(day_dir, filename)
+            filesize = os.stat(filename).st_size
+            if (tarfile_files and
+                    tarfile_size + filesize > max_uncompressed_size):
+                tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
+                                             filename_suffix)
+                create_tarfile(tar_binary, tarfile_name, tarfile_files)
+                logging.info('Created %s', tarfile_name)
+                yield tarfile_name
+                tarfile_files = []
+                tarfile_size = 0
+                tarfile_index += 1
+            tarfile_files.append(filename)
+            tarfile_size += filesize
+        if tarfile_files:
+            tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
+                                         filename_suffix)
+            create_tarfile(tar_binary, tarfile_name, tarfile_files)
+            logging.info('Created %s', tarfile_name)
+            yield tarfile_name
+
+
+def upload_tarfile(tgz_filename):  # pragma: no cover
     # TODO(pboothe)
     pass
 
@@ -335,10 +467,10 @@ def main():  # pragma: no cover
     # and delete the local copies of all successfully-uploaded data.
     new_high_water_mark = max_new_high_water_mark()
     for day in find_all_days_to_upload(destination, new_high_water_mark):
-        for tgz_filename in create_tarballs(destination, day, args.rsync_host,
-                                            args.rsync_module,
+        for tgz_filename in create_tarfiles(args.tar_binary, destination, day,
+                                            args.rsync_host, args.rsync_module,
                                             args.max_uncompressed_size):
-            upload_tarball(tgz_filename)
+            upload_tarfile(tgz_filename)
             os.remove(tgz_filename)
         update_high_water_mark(args.spreadsheet, rsync_url, day)
         remove_datafiles(destination, day)
