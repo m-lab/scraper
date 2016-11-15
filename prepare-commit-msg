@@ -4,21 +4,38 @@
 # .git/hooks directory.  The following command will get that done:
 #   ln -s ../../prepare-commit-msg .git/hooks/prepare-commit-msg
 
+# This does module not run the tests, it just outputs the saved information
+# from past test runs. This is okay for the github flow because the tests are
+# run in pre-commit, but users of this script in standalone mode should be
+# aware that if they dont re-run the unit tests then the coverage stats will
+# never change.
+COVERAGE=coverage
+if [ z`which coverage` = z ]
+then
+    COVERAGE=python-coverage
+fi
+
 (
     echo 'Test coverage is as follows:'
-    COVERAGE=coverage
-    if [ z`which coverage` = z ]
-    then
-        COVERAGE=python-coverage
-    fi
     $COVERAGE report -m
     echo
     echo 'The Python linter found the following issues:'
     pylint --rcfile=pylintrc --reports=n *.py
     echo
-    echo 'The Python formatters recommend the following changes:'
+    echo 'A selection of Python formatters recommend the following changes:'
+    echo '  unify *.py :'
     unify *.py
+    echo '  autoflake *.py :'
     autoflake *.py
+    echo '  autopep8 --max-line-length 80 -d *.py :'
     autopep8 --max-line-length 80 -d *.py
+    echo '  docformatter --no-blank --wrap-summaries 80 --wrap-descriptions 80 *.py :'
     docformatter --no-blank --wrap-summaries 80 --wrap-descriptions 80 *.py
-) | sed -e 's/^/# /' >> $1
+) | ( 
+    if [ z"$1" = z ]
+    then
+        cat -
+    else
+        sed -e 's/^/# /' >> $1
+    fi
+)

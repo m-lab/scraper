@@ -14,10 +14,10 @@
 # limitations under the License.
 """Download all new data from an MLab node, then upload what can be uploaded.
 
-This is a single-shot program to download data from an MLab node and then
-upload it to Google Cloud Storage.  It is expected that this program will be
-called every hour (or so) by a cron job, and that there will be many such cron
-jobs running in a whole fleet of containers run by Google Container Engine.
+This is a single-shot program to download data from an MLab node and then upload
+it to Google Cloud Storage.  It is expected that this program will be called
+every hour (or so) by a cron job, and that there will be many such cron jobs
+running in a whole fleet of containers run by Google Container Engine.
 """
 
 import argparse
@@ -189,7 +189,8 @@ def list_rsync_files(rsync_binary, rsync_url):
         sys.exit(1)
 
 
-def get_progress_from_spreadsheet(spreadsheet, rsync_url):  # pragma: no cover
+def get_progress_from_spreadsheet(_spreadsheet, _rsync_url):  # pragma: no cover
+    """Returns the most recent date from which we have all the data."""
     # TODO(pboothe)
     return datetime.datetime(2016, 10, 15).date()
 
@@ -248,8 +249,8 @@ def download_files(rsync_binary, rsync_url, files, destination):
         # Download all the files.
         try:
             logging.info('Downloading %d files', len(files))
-            command = [rsync_binary, '--files-from', temp.name
-                       ] + RSYNC_ARGS + [rsync_url, destination]
+            command = ([rsync_binary, '--files-from', temp.name] + RSYNC_ARGS +
+                       [rsync_url, destination])
             subprocess.check_call(command)
         except subprocess.CalledProcessError as error:
             logging.error('rsync download failed: %s', str(error))
@@ -362,12 +363,11 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
 def node_and_site(host):
     """Determine the host and site from the hostname.
 
-    Returns the host and site an contained in the hostname of the mlab
-    node.  Strips .measurement-lab.org from the hostname if it exists.
-    Existing files have names like 20150706T000000Z-
-    mlab1-acc01-ndt-0000.tgz and this function is designed to return the
-    pair ('mlab1', 'acc01') as derived from a hostname like
-    'ndt.iupui.mlab2.nuq1t.measurement-lab.org'
+    Returns the host and site an contained in the hostname of the mlab node.
+    Strips .measurement-lab.org from the hostname if it exists. Existing files
+    have names like 20150706T000000Z- mlab1-acc01-ndt-0000.tgz and this function
+    is designed to return the pair ('mlab1', 'acc01') as derived from a hostname
+    like 'ndt.iupui.mlab2.nuq1t.measurement-lab.org'
     """
     assert_mlab_hostname(host)
     names = host.split('.')
@@ -422,22 +422,26 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
             yield tarfile_name
 
 
-def upload_tarfile(tgz_filename):  # pragma: no cover
+def upload_tarfile(_tgz_filename):  # pragma: no cover
+    """Uploads a tarfile to bigstore for later processing."""
     # TODO(pboothe)
-    pass
 
 
-def update_high_water_mark(spreadsheet, rsync_url, day):  # pragma: no cover
+def update_high_water_mark(_spreadsheet, _rsync_url, _day):  # pragma: no cover
+    """Updates the date before which it is safe to delete data."""
     # TODO(pboothe)
-    pass
 
 
-def remove_datafiles(directory, day):  # pragma: no cover
+def remove_datafiles(_directory, _day):  # pragma: no cover
+    """Removes datafiles from the local disk."""
     # TODO(pboothe)
-    pass
 
 
 def main():  # pragma: no cover
+    """Run the download and upload from end-to-end.
+
+    This should be called in a container, by a cron job.
+    """
     # TODO(pboothe) end-to-end tests
     args = parse_cmdline(sys.argv[1:])
 
