@@ -16,6 +16,9 @@
     echo 'The Python linter found the following issues:'
     pylint --rcfile=pylintrc --reports=n *.py
     echo
-    echo 'The Python formatter recommends the following changes:'
-    pyformat -d -s 4 *.py
+    echo 'The Python formatters recommend the following changes:'
+    unify *.py
+    autoflake *.py
+    autopep8 --max-line-length 80 -d *.py
+    docformatter --no-blank --wrap-summaries 80 --wrap-descriptions 80 *.py
 ) | sed -e 's/^/# /' >> $1
