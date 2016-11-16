@@ -1,14 +1,26 @@
 #!/bin/bash
 
-# To make git run unit tests and lint tests, softlink this file into the
-# .git/hooks directory.  The following command will get that done:
+# prepare-commit-msg is a shell script that gets called by git with the temp
+# filename of the future commit message as its first argument. Its purpose is
+# to edit that file in order to make the commit message better/more complete.
+#
+# It runs code coverage and runs the linter and a bunch of formatters over the
+# code, and then appends the output of those tools as comments at the bottom of
+# the commit message.  However, it can also be run without a command-line
+# argument, just in case you want to see what its output is going to be without
+# running "git commit". In that case, we do the same things, but we don't
+# append anything to a file.
+#
+# To make git run this script, softlink this file into the .git/hooks
+# directory.  The following command will get that done:
 #   ln -s ../../prepare-commit-msg .git/hooks/prepare-commit-msg
-
+#
 # This module does not run the tests, it just outputs the saved information
 # from past test runs. This is okay for the github flow because the tests are
 # run in pre-commit, but users of this script in standalone mode should be
 # aware that if they don't re-run the unit tests then the coverage stats will
 # never change.
+
 COVERAGE=coverage
 if [[ -z $(which $COVERAGE) ]]; then
   COVERAGE=python-coverage
