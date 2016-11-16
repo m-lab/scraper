@@ -363,10 +363,10 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
 def node_and_site(host):
     """Determine the host and site from the hostname.
 
-    Returns the host and site an contained in the hostname of the mlab node.
-    Strips .measurement-lab.org from the hostname if it exists. Existing files
-    have names like 20150706T000000Z- mlab1-acc01-ndt-0000.tgz and this function
-    is designed to return the pair ('mlab1', 'acc01') as derived from a hostname
+    Returns the host and site contained in the hostname of the mlab node. Strips
+    .measurement-lab.org from the hostname if it exists. Existing files have
+    names like 20150706T000000Z- mlab1-acc01-ndt-0000.tgz and this function is
+    designed to return the pair ('mlab1', 'acc01') as derived from a hostname
     like 'ndt.iupui.mlab2.nuq1t.measurement-lab.org'
     """
     assert_mlab_hostname(host)
