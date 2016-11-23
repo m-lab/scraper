@@ -201,12 +201,6 @@ def list_rsync_files(rsync_binary, rsync_url):
         sys.exit(1)
 
 
-def get_progress_from_spreadsheet(_spreadsheet, _rsync_url):  # pragma: no cover
-    """Returns the most recent date from which we have all the data."""
-    # TODO(pboothe)
-    return datetime.datetime(2016, 10, 15).date()
-
-
 def remove_older_files(date, files):
     """Yields all well-formed filenames newer than `date`.
 
@@ -455,11 +449,12 @@ def cell_to_date(cell_text):
     return datetime.date(int(year, 10), int(month, 10), int(day, 10))
 
 
-def get_progress_from_spreadsheet(api_key,
+def get_progress_from_spreadsheet(_api_key,
                                   credentials,
                                   spreadsheet,
                                   rsync_url,
                                   default_date=datetime.date(2009, 1, 1)):
+    """Returns the most recent date from which we have all the data."""
     http = credentials.authorize(httplib2.Http())
     discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
                      'version=v4')
@@ -519,8 +514,8 @@ def main():  # pragma: no cover
 
     # Get credentials for the Google Sheets dropbox and use them to find the
     # high water mark for uploaded data.
-    creds = gce.AppAssertionCredentials(
-        scope='https://www.googleapis.com/auth/spreadsheets')
+    creds = gce.AppAssertionCredentials()#email)  ####BARFBARF
+
     progress_level = get_progress_from_spreadsheet(args.key, creds, args.spreadsheet,
                                                    rsync_url)
     sys.exit(1)

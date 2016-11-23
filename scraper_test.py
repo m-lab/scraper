@@ -25,6 +25,7 @@ import subprocess
 import tempfile
 import unittest
 
+import fasteners
 import freezegun
 import mock
 import scraper
@@ -41,12 +42,12 @@ class TestScraper(unittest.TestCase):
         finally:
             shutil.rmtree(temp_d)
 
-    @mock.patch('fasteners.InterProcessLock.acquire')
-    def test_file_locking_failure_causes_exit(self, patched_acquire):
+    @mock.patch.object(fasteners.InterProcessLock, 'acquire',
+                       return_value=False)
+    def test_file_locking_failure_causes_exit(self, _patched_acquire):
         try:
             temp_d = tempfile.mkdtemp()
             lockfile = os.path.join(temp_d, 'testlockfile')
-            patched_acquire.return_value = False
             with self.assertRaises(SystemExit):
                 scraper.acquire_lock_or_die(lockfile)
         finally:
@@ -89,7 +90,7 @@ class TestScraper(unittest.TestCase):
         with self.assertRaises(SystemExit):
             scraper.parse_cmdline(['-h'])
 
-    @mock.patch('subprocess.check_output')
+    @mock.patch.object(subprocess, 'check_output')
     def test_list_rsync_files(self, patched_subprocess):
         # pylint: disable=line-too-long
         serverfiles = """\
@@ -169,7 +170,7 @@ BADBADBAD
         # If the next line doesn't raise SystemExit then the test passes
         scraper.download_files('/bin/false', 'localhost/', [], '/tmp')
 
-    @mock.patch('subprocess.check_call')
+    @mock.patch.object(subprocess, 'check_call')
     def test_download_files(self, patched_check_call):
         files = ['2016/10/26/DNE1', '2016/10/26/DNE2']
 
