@@ -31,6 +31,10 @@ import subprocess
 import sys
 import tempfile
 
+import apiclient
+import httplib2
+import oauth2client
+
 
 import apiclient
 import fasteners
@@ -434,7 +438,6 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
 
 def upload_tarfile(_tgz_filename):  # pragma: no cover
     """Uploads a tarfile to bigstore for later processing."""
-    # TODO(pboothe)
 
 
 def update_high_water_mark(_spreadsheet, _rsync_url, _day):  # pragma: no cover
@@ -492,6 +495,35 @@ def get_progress_from_spreadsheet(_api_key,
 
 def remove_datafiles(_directory, _day):  # pragma: no cover
     """Removes datafiles from the local disk."""
+
+
+def get_credentials(flags):
+    """Gets valid user credentials from storage.
+
+    If nothing has been stored, or if the stored credentials are invalid,
+    the OAuth2 flow is completed to obtain the new credentials.
+
+    Returns:
+        Credentials, the obtained credential.
+    """
+    client_secret_file = 'client_secret.json'
+    application_name = 'MLab Scraper'
+    scopes = 'https://www.googleapis.com/auth/spreadsheets.readonly'
+    home_dir = os.path.expanduser('~')
+    credential_dir = os.path.join(home_dir, '.credentials')
+    if not os.path.exists(credential_dir):
+        os.makedirs(credential_dir)
+    credential_path = os.path.join(credential_dir,
+                                   'sheets.scraper-measurement-lab.json')
+    store = oauth2client.file.Storage(credential_path)
+    credentials = store.get()
+    if not credentials or credentials.invalid:
+        flow = oauth2client.client.flow_from_clientsecrets(client_secret_file,
+                                                           scopes)
+        flow.user_agent = application_name
+        credentials = oauth2client.tools.run_flow(flow, store, flags)
+        logging.info('Storing credentials to %s', credential_path)
+    return credentials
 
 
 def main():  # pragma: no cover
