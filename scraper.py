@@ -35,12 +35,13 @@ import apiclient
 import httplib2
 import oauth2client
 
-
 import apiclient
 import fasteners
 import httplib2
 import oauth2client
+from oauth2client.service_account import ServiceAccountCredentials
 from oauth2client.contrib import gce
+from oauth2client.client import GoogleCredentials
 
 
 def acquire_lock_or_die(lockfile):
@@ -546,8 +547,9 @@ def main():  # pragma: no cover
 
     # Get credentials for the Google Sheets dropbox and use them to find the
     # high water mark for uploaded data.
-    creds = gce.AppAssertionCredentials()#email)  ####BARFBARF
-
+    creds = gce.AppAssertionCredentials(scopes=['https://www.googleapis.com/auth/spreadsheets'])
+    #creds = ServiceAccountCredentials.from_json_keyfile_name('secret_key.json', ['https://www.googleapis.com/auth/spreadsheets'])
+    # Add the scope https://www.googleapis.com/auth/spreadsheets to the credentials
     progress_level = get_progress_from_spreadsheet(args.key, creds, args.spreadsheet,
                                                    rsync_url)
     sys.exit(1)
