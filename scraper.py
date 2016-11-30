@@ -19,29 +19,35 @@ This is a single-shot program to download data from an MLab node and then upload
 it to Google Cloud Storage.  It is expected that this program will be called
 every hour (or so) by a cron job, and that there will be many such cron jobs
 running in a whole fleet of containers run by Google Container Engine.
+
+This program expects to be run on GCE and uses both cloud APIs and the Google
+Sheets API.  Sheets API access is not enabled by default for GCE, and it can't
+be enabled from the web-based GCE instance creation interface, and the scopes
+that a GCE instance has can't be changed after creation. To create a new GCE
+instance named scraper-dev that has access to both cloud APIs and spreadsheet
+apis, you need to use the following command line:
+
+   gcloud compute instances create scraper-dev \
+       --scopes cloud-platform,https://www.googleapis.com/auth/spreadsheets
 """
 
 import argparse
 import atexit
+import collections
 import contextlib
 import datetime
 import logging
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
 
 import apiclient
-import httplib2
-import oauth2client
-
-import apiclient
 import fasteners
 import httplib2
 import oauth2client
-from oauth2client.service_account import ServiceAccountCredentials
 from oauth2client.contrib import gce
-from oauth2client.client import GoogleCredentials
 
 
 def acquire_lock_or_die(lockfile):
@@ -157,10 +163,11 @@ def parse_cmdline(args):
         help='The maximum number of bytes in an uncompressed tarfile (default '
         'is 1,000,000,000 = 1 GB)')
     parser.add_argument(
-        '--key',
-        metavar='KEY',
+        '--bucket',
+        metavar='BUCKET',
         type=str,
-        help='The API key to use for access to resources')
+        default='mlab-storage-scraper-test',
+        help='The Google Cloud Storage bucket to upload to')
     return parser.parse_args(args)
 
 
@@ -196,6 +203,8 @@ def list_rsync_files(rsync_binary, rsync_url):
         for line in lines:
             # None is a special whitespace arg for split
             chunks = line.split(None, 4)
+            if chunks[0].startswith('d'):
+                continue
             if len(chunks) != 5:
                 logging.error('Bad line in output: %s', line)
                 continue
@@ -218,7 +227,8 @@ def remove_older_files(date, files):
     """
     for fname in files:
         if fname.count('/') < 3:
-            logging.info('Ignoring %s', fname)
+            logging.info('Ignoring %s (if it is a directory, the directory '
+                         'contents will still be examined)', fname)
             continue
         year, month, day, _ = fname.split('/', 3)
         if not (year.isdigit() and month.isdigit() and day.isdigit()):
@@ -251,6 +261,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
       files: an iterable of filenames to retrieve
       destination: the directory on the local host to put the files
     """
+    files = list(files)
     # Rsync all the files that are new enough for us to care about
     with tempfile.NamedTemporaryFile() as temp:
         # Write the list of files to a tempfile, so as not to have to worry
@@ -278,7 +289,7 @@ def max_new_high_water_mark():
 
     8 hours after midnight, we will assume that no tests from the previous
     day could possibly have failed to be written to disk.  So this should
-    always be either yesterday, or the day before, depending on how late
+    always be either yesterday or the day before, depending on how late
     in the day it is.
 
     Returns:
@@ -437,41 +448,45 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
             yield tarfile_name
 
 
-def upload_tarfile(_tgz_filename):  # pragma: no cover
+def upload_tarfile(service, tgz_filename, date, bucket):  # pragma: no cover
     """Uploads a tarfile to bigstore for later processing."""
+    name = '%d/%02d/%02d/%s' % (date.year, date.month, date.day, tgz_filename)
+    body = {'name': name}
+    logging.info('Uploading %s to %s/%s', tgz_filename, bucket, body['name'])
+    request = service.objects().insert(
+        bucket=bucket, body=body, media_body=tgz_filename)
+    request.execute()
 
 
-def update_high_water_mark(_spreadsheet, _rsync_url, _day):  # pragma: no cover
-    """Updates the date before which it is safe to delete data."""
-
-
-def cell_to_date(cell_text):
+def cell_to_date_or_die(cell_text):
     """Converts a cell of the form 'x2016-01-28' into a date."""
-    assert cell_text.count('-') == 2 and cell_text[0] == 'x'
-    year, month, day = cell_text[1:].split('-')
-    assert year.isdigit() and month.isdigit() and day.isdigit()
-    return datetime.date(int(year, 10), int(month, 10), int(day, 10))
+    try:
+        assert cell_text.count('-') == 2 and cell_text[0] == 'x'
+        year, month, day = cell_text[1:].split('-')
+        assert year.isdigit() and month.isdigit() and day.isdigit()
+        return datetime.date(int(year, 10), int(month, 10), int(day, 10))
+    except (AssertionError, ValueError):
+        logging.error('Bad spreadsheet cell for the date: "%s"', cell_text)
+        sys.exit(1)
 
 
-def get_progress_from_spreadsheet(_api_key,
-                                  credentials,
+def get_spreadsheet_data(service, spreadsheet, range_name):  # pragma: no cover
+    """Retrieves data from a spreadsheet.
+
+    Made into its own function so that it can be mocked for testing purposes.
+    """
+    result = service.spreadsheets().values().get(spreadsheetId=spreadsheet,
+                                                 range=range_name).execute()
+    return result.get('values', [])
+
+
+def get_progress_from_spreadsheet(service,
                                   spreadsheet,
                                   rsync_url,
                                   default_date=datetime.date(2009, 1, 1)):
     """Returns the most recent date from which we have all the data."""
-    http = credentials.authorize(httplib2.Http())
-    discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
-                     'version=v4')
-###### ????
-    service = apiclient.discovery.build(
-        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url, credentials=credentials)
     range_name = 'Drop box status (auto updated)!A:F'
-    # Apparently the apiclient library confuses the linter.
-    # pylint: disable=no-member
-    result = service.spreadsheets().values().get(spreadsheetId=spreadsheet,
-                                                 range=range_name).execute()
-    # pylint: enable=no-member
-    values = result.get('values', [])
+    values = get_spreadsheet_data(service, spreadsheet, range_name)
     if not values:
         logging.critical('No data found in the given spreadsheet')
         sys.exit(1)
@@ -481,59 +496,84 @@ def get_progress_from_spreadsheet(_api_key,
     for row in values[1:]:
         if row[rsync_index] == rsync_url:
             date = row[date_index]
-            if not date:
-                logging.warning('No date in the spreadsheet for %s', rsync_url)
-                return default_date
-            try:
-                return cell_to_date(date)
-            except (AssertionError, ValueError) as exc:
-                logging.warning('Bad date string "%s" caused error: %s', date,
-                                exc)
-                return default_date
+            logging.info('Old high water mark was %s', date)
+            return cell_to_date_or_die(date)
     logging.warning('No row found for %s', rsync_url)
     return default_date
 
 
-def remove_datafiles(_directory, _day):  # pragma: no cover
-    """Removes datafiles from the local disk."""
+def update_spreadsheet_data(service, spreadsheet, rsync_url, column,
+                            value):  # pragma: no cover
+    """Updates a single cell on the spreadsheet.
 
-
-def get_credentials(flags):
-    """Gets valid user credentials from storage.
-
-    If nothing has been stored, or if the stored credentials are invalid,
-    the OAuth2 flow is completed to obtain the new credentials.
-
-    Returns:
-        Credentials, the obtained credential.
+    The row and column of the cell are determined by the rsync_url and column
+    values, respectively.  If no such row exists, then one willbe created.
     """
-    client_secret_file = 'client_secret.json'
-    application_name = 'MLab Scraper'
-    scopes = 'https://www.googleapis.com/auth/spreadsheets.readonly'
-    home_dir = os.path.expanduser('~')
-    credential_dir = os.path.join(home_dir, '.credentials')
-    if not os.path.exists(credential_dir):
-        os.makedirs(credential_dir)
-    credential_path = os.path.join(credential_dir,
-                                   'sheets.scraper-measurement-lab.json')
-    store = oauth2client.file.Storage(credential_path)
-    credentials = store.get()
-    if not credentials or credentials.invalid:
-        flow = oauth2client.client.flow_from_clientsecrets(client_secret_file,
-                                                           scopes)
-        flow.user_agent = application_name
-        credentials = oauth2client.tools.run_flow(flow, store, flags)
-        logging.info('Storing credentials to %s', credential_path)
-    return credentials
+    worksheet_name = 'Drop box status (auto updated)'
+    range_name = worksheet_name + '!A:F'
+    values = get_spreadsheet_data(service, spreadsheet, range_name)
+    if not values:
+        logging.critical('No data found in the given spreadsheet')
+        sys.exit(1)
+    header = values[0]
+    rsync_index = header.index(u'dropboxrsyncaddress')
+    column_index = header.index(column)
+    for row_index in range(1, len(values)):
+        if values[row_index][rsync_index] == rsync_url:
+            assert column_index <= 26, 'Too many columns'
+            # row_index + 1 because array indices are zero-based but
+            # spreadsheet rows are one-based
+            cell_id = chr(ord('A') + column_index) + str(row_index + 1)
+            update_range = worksheet_name + '!' + cell_id
+            values = [[value]]
+            body = {'values': values}
+            logging.info('About to update %s (%s, %s) to %s', cell_id,
+                         rsync_url, column, values[0][0])
+            response = service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet, range=update_range,
+                body=body, valueInputOption='RAW').execute()
+            assert response['updatedRows'], 'Bad update ' + str(response)
+            return
+    data = collections.defaultdict(str)
+    data[u'dropboxrsyncaddress'] = rsync_url
+    data[column] = value
+    new_row = [data[x] for x in header]
+    body = {'values': [new_row]}
+    response = service.spreadsheets().values().append(
+        spreadsheetId=spreadsheet, range=range_name, body=body,
+        valueInputOption='RAW').execute()
+    assert response['updates']['updatedRows'], 'Bad append ' + str(response)
 
 
-def main():  # pragma: no cover
+def update_high_water_mark(service, spreadsheet, rsync_url, date):
+    """Updates the date before which it is safe to delete data."""
+    date_str = 'x%d-%02d-%02d' % (date.year, date.month, date.day)
+    update_spreadsheet_data(service, spreadsheet, rsync_url,
+                            'lastsuccessfulcollection', date_str)
+
+
+def remove_datafiles(directory, day):
+    """Removes datafiles from the local disk."""
+    day_dir = '%02d' % day.day
+    month_dir = '%02d' % day.month
+    year_dir = '%d' % day.year
+    with chdir(directory):
+        with chdir(year_dir):
+            with chdir(month_dir):
+                shutil.rmtree(day_dir)
+            if not os.listdir(month_dir):
+                os.rmdir(month_dir)
+        if not os.listdir(year_dir):
+            os.rmdir(year_dir)
+
+
+def main(argv):  # pragma: no cover
     """Run the download and upload from end-to-end.
 
     This should be called in a container, by a cron job.
     """
     # TODO(pboothe) end-to-end tests
-    args = parse_cmdline(sys.argv[1:])
+    args = parse_cmdline(argv[1:])
 
     # Ensure that old long-lasting downloads don't get clobbered by new ones.
     lockfile = os.path.join(
@@ -545,14 +585,22 @@ def main():  # pragma: no cover
     rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
                                           args.rsync_module)
 
-    # Get credentials for the Google Sheets dropbox and use them to find the
-    # high water mark for uploaded data.
-    creds = gce.AppAssertionCredentials(scopes=['https://www.googleapis.com/auth/spreadsheets'])
-    #creds = ServiceAccountCredentials.from_json_keyfile_name('secret_key.json', ['https://www.googleapis.com/auth/spreadsheets'])
-    # Add the scope https://www.googleapis.com/auth/spreadsheets to the credentials
-    progress_level = get_progress_from_spreadsheet(args.key, creds, args.spreadsheet,
-                                                   rsync_url)
-    sys.exit(1)
+    # Authorize this application to use the Sheets API
+    creds = gce.AppAssertionCredentials()
+
+    # Set up the Sheets and Cloud Storage APIs
+    http = creds.authorize(httplib2.Http())
+    discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
+                     'version=v4')
+    sheets_service = apiclient.discovery.build(
+        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url,
+        credentials=creds)
+    storage_service = apiclient.discovery.build(
+        'storage', 'v1', credentials=creds)
+
+    # Find the current progress level from the spreadsheet
+    progress_level = get_progress_from_spreadsheet(
+        sheets_service, args.spreadsheet, rsync_url)
     # If the destination directory does not exist, make it exist.
     destination = os.path.join(args.data_dir, args.rsync_host,
                                args.rsync_module)
@@ -572,9 +620,9 @@ def main():  # pragma: no cover
         for tgz_filename in create_tarfiles(args.tar_binary, destination, day,
                                             args.rsync_host, args.rsync_module,
                                             args.max_uncompressed_size):
-            upload_tarfile(tgz_filename)
+            upload_tarfile(storage_service, tgz_filename, day, args.bucket)
             os.remove(tgz_filename)
-        update_high_water_mark(args.spreadsheet, rsync_url, day)
+        update_high_water_mark(sheets_service, args.spreadsheet, rsync_url, day)
         remove_datafiles(destination, day)
 
 
@@ -583,4 +631,4 @@ if __name__ == '__main__':  # pragma: no cover
         level=logging.INFO,
         format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d] '
         '%(message)s')
-    main()
+    main(sys.argv)

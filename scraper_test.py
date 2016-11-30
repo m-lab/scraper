@@ -16,7 +16,7 @@
 # No docstrings required for tests, and tests need to be methods of classes to
 # aid in organization of tests. Using the 'self' variable is not required.
 #
-# pylint: disable=missing-docstring, no-self-use
+# pylint: disable=missing-docstring, no-self-use, too-many-public-methods
 
 import datetime
 import os
@@ -109,7 +109,7 @@ BADBADBAD
         patched_subprocess.return_value = serverfiles
         files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost')
         self.assertEqual([
-            '.', '2016', '2016/01', '2016/01/06', '2016/01/06/.gz',
+            '2016/01/06/.gz',
             '2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz',
             '2016/01/06/20160106T05:43:32.741066000Z_:0.meta',
             '2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz',
@@ -124,7 +124,8 @@ BADBADBAD
     def test_remove_older_files(self):
         # pylint: disable=line-too-long
         files = [
-            '.', '2016', '2016/01', '2016/01/06', '2016/01/06/.gz',
+            'monkey/06/.gz',
+            '2016/01/06/.gz',
             '2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz',
             '2016/01/06/20160106T05:43:32.741066000Z_:0.meta',
             '2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz',
@@ -141,6 +142,7 @@ BADBADBAD
             '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.cputime.gz',
             '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.meta',
             '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:50264.s2c_snaplog.gz',
+            '2016/10/35/20161026T18:02:59.898385000Z_eb.measurementlab.net:50264.s2c_snaplog.gz',
             '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:52410.c2s_snaplog.gz'
         ]
         filtered = list(
@@ -395,6 +397,87 @@ BADBADBAD
                 ])
                 self.assertFalse(os.path.exists('2016/01/28/test1.txt'))
                 self.assertTrue(os.path.exists('2016/01/28/test2.txt'))
+        finally:
+            shutil.rmtree(temp_d)
+
+    @mock.patch.object(scraper, 'get_spreadsheet_data')
+    def test_get_progress_from_spreadsheet_default(self, patched_get):
+        patched_get.return_value = [
+            [u'dropboxrsyncaddress', u'lastsuccessfulcollection'],
+            [1, 2]]
+        high_water_mark = scraper.get_progress_from_spreadsheet(
+            None, None, 'fsdfds')
+        self.assertEqual(high_water_mark, datetime.date(2009, 1, 1))
+
+    @mock.patch.object(scraper, 'get_spreadsheet_data', return_value=[])
+    def test_get_progress_from_empty_spreadsheet(self, _patched_get):
+        with self.assertRaises(SystemExit):
+            scraper.get_progress_from_spreadsheet(None, None, 'barf')
+
+    @mock.patch.object(scraper, 'get_spreadsheet_data')
+    def test_get_progress_from_spreadsheet_empty_date(self, patched_get):
+        with self.assertRaises(SystemExit):
+            rsync_url = u'rsync://localhost:1234/ndt'
+            patched_get.return_value = [
+                [u'dropboxrsyncaddress', u'lastsuccessfulcollection'],
+                [u'not this one', u'x2009-12-03'],
+                [rsync_url, u''],
+                [u'not this one either', u'x2009-09-09']]
+            scraper.get_progress_from_spreadsheet(None, None, rsync_url)
+
+    @mock.patch.object(scraper, 'get_spreadsheet_data')
+    def test_get_progress_from_spreadsheet_bad_date(self, patched_get):
+        with self.assertRaises(SystemExit):
+            rsync_url = u'rsync://localhost:1234/ndt'
+            patched_get.return_value = [
+                [u'dropboxrsyncaddress', u'lastsuccessfulcollection'],
+                [u'not this one', u'x2009-12-03'],
+                [rsync_url, u'2009-13-10'],
+                [u'not this one either', u'x2009-09-09']]
+            scraper.get_progress_from_spreadsheet(None, None, rsync_url)
+
+    @mock.patch.object(scraper, 'get_spreadsheet_data')
+    def test_get_progress_from_spreadsheet(self, patched_get):
+        rsync_url = u'rsync://localhost:1234/ndt'
+        patched_get.return_value = [
+            [u'dropboxrsyncaddress', u'lastsuccessfulcollection'],
+            [u'not this one', u'x2009-12-03'],
+            [rsync_url, u'x2010-11-02'],
+            [u'not this one either', u'x2009-09-09']]
+        high_water_mark = scraper.get_progress_from_spreadsheet(None, None,
+                                                                rsync_url)
+        self.assertEqual(high_water_mark, datetime.date(2010, 11, 2))
+
+    @mock.patch.object(scraper, 'update_spreadsheet_data')
+    def test_high_water_mark(self, patched_update):
+        scraper.update_high_water_mark(
+            None, '123', 'rsync://localhost:7999/test',
+            datetime.date(2012, 2, 29))
+        patched_update.assert_called_once()
+        self.assertEqual(patched_update.call_args[0][4], 'x2012-02-29')
+
+    def test_remove_datafiles_all_finished(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                os.makedirs('2009/02/28')
+                file('2009/02/28/data.txt', 'w').write('test')
+            scraper.remove_datafiles(temp_d, datetime.date(2009, 2, 28))
+            self.assertEqual([], os.listdir(temp_d))
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_remove_datafiles_not_all_finished(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                os.makedirs('2009/02/27')
+                file('2009/02/27/data.txt', 'w').write('test')
+                os.makedirs('2009/02/28')
+                file('2009/02/28/data2.txt', 'w').write('test')
+            scraper.remove_datafiles(temp_d, datetime.date(2009, 2, 27))
+            self.assertEqual(
+                ['data2.txt'], os.listdir(os.path.join(temp_d, '2009/02/28')))
         finally:
             shutil.rmtree(temp_d)
 
