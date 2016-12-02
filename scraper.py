@@ -194,7 +194,7 @@ def list_rsync_files(rsync_binary, rsync_url):
     """
     try:
         logging.info('rsync file list discovery from %s', rsync_url)
-        command = [rsync_binary, '--list-only', '-r'] + \
+        command = [rsync_binary, '--list-only', '--recursive'] + \
             RSYNC_ARGS + [rsync_url]
         logging.info('Listing files on server with the command: %s',
                      ' '.join(command))
@@ -449,107 +449,23 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
 
 
 def upload_tarfile(service, tgz_filename, date, bucket):  # pragma: no cover
-    """Uploads a tarfile to bigstore for later processing."""
+    """Uploads a tarfile to Google Cloud Storage for later processing.
+
+    Puts the file into a GCS bucket. If a file of that same name already
+    exists, the file is overwritten.
+
+    Args:
+      service: the service object returned from discovery
+      tgz_filename: the basename of the tarfile
+      date: the date for the data
+      bucket: the name of the GCS bucket
+    """
     name = '%d/%02d/%02d/%s' % (date.year, date.month, date.day, tgz_filename)
     body = {'name': name}
     logging.info('Uploading %s to %s/%s', tgz_filename, bucket, body['name'])
     request = service.objects().insert(
         bucket=bucket, body=body, media_body=tgz_filename)
     request.execute()
-
-
-def cell_to_date_or_die(cell_text):
-    """Converts a cell of the form 'x2016-01-28' into a date."""
-    try:
-        assert cell_text.count('-') == 2 and cell_text[0] == 'x'
-        year, month, day = cell_text[1:].split('-')
-        assert year.isdigit() and month.isdigit() and day.isdigit()
-        return datetime.date(int(year, 10), int(month, 10), int(day, 10))
-    except (AssertionError, ValueError):
-        logging.error('Bad spreadsheet cell for the date: "%s"', cell_text)
-        sys.exit(1)
-
-
-def get_spreadsheet_data(service, spreadsheet, range_name):  # pragma: no cover
-    """Retrieves data from a spreadsheet.
-
-    Made into its own function so that it can be mocked for testing purposes.
-    """
-    result = service.spreadsheets().values().get(spreadsheetId=spreadsheet,
-                                                 range=range_name).execute()
-    return result.get('values', [])
-
-
-def get_progress_from_spreadsheet(service,
-                                  spreadsheet,
-                                  rsync_url,
-                                  default_date=datetime.date(2009, 1, 1)):
-    """Returns the most recent date from which we have all the data."""
-    range_name = 'Drop box status (auto updated)!A:F'
-    values = get_spreadsheet_data(service, spreadsheet, range_name)
-    if not values:
-        logging.critical('No data found in the given spreadsheet')
-        sys.exit(1)
-    header = values[0]
-    rsync_index = header.index(u'dropboxrsyncaddress')
-    date_index = header.index(u'lastsuccessfulcollection')
-    for row in values[1:]:
-        if row[rsync_index] == rsync_url:
-            date = row[date_index]
-            logging.info('Old high water mark was %s', date)
-            return cell_to_date_or_die(date)
-    logging.warning('No row found for %s', rsync_url)
-    return default_date
-
-
-def update_spreadsheet_data(service, spreadsheet, rsync_url, column,
-                            value):  # pragma: no cover
-    """Updates a single cell on the spreadsheet.
-
-    The row and column of the cell are determined by the rsync_url and column
-    values, respectively.  If no such row exists, then one willbe created.
-    """
-    worksheet_name = 'Drop box status (auto updated)'
-    range_name = worksheet_name + '!A:F'
-    values = get_spreadsheet_data(service, spreadsheet, range_name)
-    if not values:
-        logging.critical('No data found in the given spreadsheet')
-        sys.exit(1)
-    header = values[0]
-    rsync_index = header.index(u'dropboxrsyncaddress')
-    column_index = header.index(column)
-    for row_index in range(1, len(values)):
-        if values[row_index][rsync_index] == rsync_url:
-            assert column_index <= 26, 'Too many columns'
-            # row_index + 1 because array indices are zero-based but
-            # spreadsheet rows are one-based
-            cell_id = chr(ord('A') + column_index) + str(row_index + 1)
-            update_range = worksheet_name + '!' + cell_id
-            values = [[value]]
-            body = {'values': values}
-            logging.info('About to update %s (%s, %s) to %s', cell_id,
-                         rsync_url, column, values[0][0])
-            response = service.spreadsheets().values().update(
-                spreadsheetId=spreadsheet, range=update_range,
-                body=body, valueInputOption='RAW').execute()
-            assert response['updatedRows'], 'Bad update ' + str(response)
-            return
-    data = collections.defaultdict(str)
-    data[u'dropboxrsyncaddress'] = rsync_url
-    data[column] = value
-    new_row = [data[x] for x in header]
-    body = {'values': [new_row]}
-    response = service.spreadsheets().values().append(
-        spreadsheetId=spreadsheet, range=range_name, body=body,
-        valueInputOption='RAW').execute()
-    assert response['updates']['updatedRows'], 'Bad append ' + str(response)
-
-
-def update_high_water_mark(service, spreadsheet, rsync_url, date):
-    """Updates the date before which it is safe to delete data."""
-    date_str = 'x%d-%02d-%02d' % (date.year, date.month, date.day)
-    update_spreadsheet_data(service, spreadsheet, rsync_url,
-                            'lastsuccessfulcollection', date_str)
 
 
 def remove_datafiles(directory, day):
@@ -565,6 +481,120 @@ def remove_datafiles(directory, day):
                 os.rmdir(month_dir)
         if not os.listdir(year_dir):
             os.rmdir(year_dir)
+
+
+def cell_to_date_or_die(cell_text):
+    """Converts a cell of the form 'x2016-01-28' into a date."""
+    try:
+        assert cell_text.count('-') == 2 and cell_text[0] == 'x'
+        year, month, day = cell_text[1:].split('-')
+        assert year.isdigit() and month.isdigit() and day.isdigit()
+        return datetime.date(int(year, 10), int(month, 10), int(day, 10))
+    except (AssertionError, ValueError):
+        logging.error('Bad spreadsheet cell for the date: "%s"', cell_text)
+        sys.exit(1)
+
+
+class Spreadsheet(object):
+    """A Spreadsheet retrieves and updates the contents of a Google sheet."""
+
+    def __init__(self, service, spreadsheet,
+                 worksheet='Drop box status (auto updated)',
+                 default_range='A:F'):
+        self._service = service
+        self._spreadsheet = spreadsheet
+        self._worksheet = worksheet
+        self._default_range = default_range
+
+    def get_data(self, worksheet_range=None):  # pragma: no cover
+        """Retrieves data from a spreadsheet.
+
+        A separate function so that it can be mocked for testing purposes.
+        """
+        if worksheet_range is None:
+            worksheet_range = self._default_range
+        sheet_range = self._worksheet + '!' + worksheet_range
+        result = self._service.spreadsheets().values().get(
+            spreadsheetId=self._spreadsheet, range=sheet_range).execute()
+        return result.get('values', [])
+
+    def get_progress(self, rsync_url, default_date=datetime.date(2009, 1, 1)):
+        """Returns the most recent date from which we have all the data.
+
+        Downloads everything in the spreadsheet, then finds the right row, and
+        then the right column in that row, and returns the date stored at that
+        cell.
+
+        Args:
+          rsync_url: the url to download from (determines the row)
+          default_date: the time to return if the row does not exist
+        """
+        values = self.get_data()
+        if not values:
+            logging.critical('No data found in the given spreadsheet')
+            sys.exit(1)
+        header = values[0]
+        rsync_index = header.index('dropboxrsyncaddress')
+        date_index = header.index('lastsuccessfulcollection')
+        for row in values[1:]:
+            if row[rsync_index] == rsync_url:
+                date_str = row[date_index]
+                logging.info('Old high water mark was %s', date_str)
+                return cell_to_date_or_die(date_str)
+        logging.warning('No row found for %s', rsync_url)
+        return default_date
+
+    def update_data(self, rsync_url, column, value):  # pragma: no cover
+        """Updates a single cell on the spreadsheet.
+
+        The row and column of the cell are determined by the rsync_url and
+        column values, respectively.  If no such row exists, then one will be
+        created.
+
+        Args:
+          rsync_url: determines the row
+          column: determines the column (must be one of the header values)
+          value: the new value to write to the cell
+        """
+        values = self.get_data()
+        if not values:
+            logging.critical('No data found in the given spreadsheet')
+            sys.exit(1)
+        header = values[0]
+        rsync_index = header.index('dropboxrsyncaddress')
+        column_index = header.index(column)
+        for row_index in range(1, len(values)):
+            if values[row_index][rsync_index] == rsync_url:
+                assert column_index <= 26, 'Too many columns'
+                # row_index + 1 because array indices are zero-based but
+                # spreadsheet rows are one-based
+                cell_id = chr(ord('A') + column_index) + str(row_index + 1)
+                update_range = self._worksheet + '!' + cell_id
+                values = [[value]]
+                body = {'values': values}
+                logging.info('About to update %s (%s, %s) to %s', cell_id,
+                             rsync_url, column, values[0][0])
+                response = self._service.spreadsheets().values().update(
+                    spreadsheetId=self._spreadsheet, range=update_range,
+                    body=body, valueInputOption='RAW').execute()
+                assert response['updatedRows'], 'Bad update ' + str(response)
+                return
+        # Append a new row
+        data = collections.defaultdict(str)
+        data['dropboxrsyncaddress'] = rsync_url
+        data[column] = value
+        new_row = [data[x] for x in header]
+        body = {'values': [new_row]}
+        range_name = self._worksheet + '!' + self._default_range
+        response = self._service.spreadsheets().values().append(
+            spreadsheetId=self._spreadsheet, range=range_name, body=body,
+            valueInputOption='RAW').execute()
+        assert response['updates']['updatedRows'], 'Bad append ' + str(response)
+
+    def update_high_water_mark(self, rsync_url, date):
+        """Updates the date before which it is safe to delete data."""
+        date_str = 'x%d-%02d-%02d' % (date.year, date.month, date.day)
+        self.update_data(rsync_url, 'lastsuccessfulcollection', date_str)
 
 
 def main(argv):  # pragma: no cover
@@ -595,12 +625,12 @@ def main(argv):  # pragma: no cover
     sheets_service = apiclient.discovery.build(
         'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url,
         credentials=creds)
+    spreadsheet = Spreadsheet(sheets_service, args.spreadsheet)
     storage_service = apiclient.discovery.build(
         'storage', 'v1', credentials=creds)
 
     # Find the current progress level from the spreadsheet
-    progress_level = get_progress_from_spreadsheet(
-        sheets_service, args.spreadsheet, rsync_url)
+    progress_level = spreadsheet.get_progress(rsync_url)
     # If the destination directory does not exist, make it exist.
     destination = os.path.join(args.data_dir, args.rsync_host,
                                args.rsync_module)
@@ -622,7 +652,7 @@ def main(argv):  # pragma: no cover
                                             args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day, args.bucket)
             os.remove(tgz_filename)
-        update_high_water_mark(sheets_service, args.spreadsheet, rsync_url, day)
+        spreadsheet.update_high_water_mark(rsync_url, day)
         remove_datafiles(destination, day)
 
 

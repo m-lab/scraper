@@ -7,4 +7,3 @@ unify
 autoflake
 autopep8
 docformatter
-dateparser
