@@ -237,7 +237,7 @@ def remove_older_files(date, files):
                 fname)
             continue
         try:
-            # Pass in a radix to guard against zero-padded 8 and 9
+            # Pass in a radix to guard against zero-padded 8 and 9.
             year = int(year, 10)
             month = int(month, 10)
             day = int(day, 10)
@@ -262,7 +262,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
       destination: the directory on the local host to put the files
     """
     files = list(files)
-    # Rsync all the files that are new enough for us to care about
+    # Rsync all the files that are new enough for us to care about.
     with tempfile.NamedTemporaryFile() as temp:
         # Write the list of files to a tempfile, so as not to have to worry
         # about too-long command lines full of filenames.
@@ -391,7 +391,7 @@ def node_and_site(host):
 
     Returns the host and site contained in the hostname of the mlab node. Strips
     .measurement-lab.org from the hostname if it exists. Existing files have
-    names like 20150706T000000Z- mlab1-acc01-ndt-0000.tgz and this function is
+    names like 20150706T000000Z-mlab1-acc01-ndt-0000.tgz and this function is
     designed to return the pair ('mlab1', 'acc01') as derived from a hostname
     like 'ndt.iupui.mlab2.nuq1t.measurement-lab.org'
     """
@@ -416,7 +416,8 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
       max_uncompressed_size: the max size of an individual tarfile
     """
     node, site = node_and_site(host)
-    # Existing files have names like: 20150706T000000Z-mlab1-acc01-ndt-0000.tgz
+    # Ensure that the filenames we generate match the existing files that have
+    # names like '20150706T000000Z-mlab1-acc01-ndt-0000.tgz'.
     filename_prefix = '%d%02d%02dT000000Z-%s-%s-%s-' % (
         day.year, day.month, day.day, node, site, experiment)
     filename_suffix = '.tgz'
@@ -469,7 +470,10 @@ def upload_tarfile(service, tgz_filename, date, bucket):  # pragma: no cover
 
 
 def remove_datafiles(directory, day):
-    """Removes datafiles from the local disk."""
+    """Removes datafiles for a given day from the local disk.
+
+    Prunes any empty subdirectories that it creates.
+    """
     day_dir = '%02d' % day.day
     month_dir = '%02d' % day.month
     year_dir = '%d' % day.year
@@ -497,6 +501,9 @@ def cell_to_date_or_die(cell_text):
 
 class Spreadsheet(object):
     """A Spreadsheet retrieves and updates the contents of a Google sheet."""
+
+    RSYNC_COLUMN = 'dropboxrsyncaddress'
+    COLLECTION_COLUMN = 'lastsuccessfulcollection'
 
     def __init__(self, service, spreadsheet,
                  worksheet='Drop box status (auto updated)',
@@ -534,8 +541,8 @@ class Spreadsheet(object):
             logging.critical('No data found in the given spreadsheet')
             sys.exit(1)
         header = values[0]
-        rsync_index = header.index('dropboxrsyncaddress')
-        date_index = header.index('lastsuccessfulcollection')
+        rsync_index = header.index(self.RSYNC_COLUMN)
+        date_index = header.index(self.COLLECTION_COLUMN)
         for row in values[1:]:
             if row[rsync_index] == rsync_url:
                 date_str = row[date_index]
@@ -561,13 +568,13 @@ class Spreadsheet(object):
             logging.critical('No data found in the given spreadsheet')
             sys.exit(1)
         header = values[0]
-        rsync_index = header.index('dropboxrsyncaddress')
+        rsync_index = header.index(self.RSYNC_COLUMN)
         column_index = header.index(column)
+        assert column_index <= 26, 'Too many columns'
         for row_index in range(1, len(values)):
             if values[row_index][rsync_index] == rsync_url:
-                assert column_index <= 26, 'Too many columns'
-                # row_index + 1 because array indices are zero-based but
-                # spreadsheet rows are one-based
+                # Convert zero-based index stored in row_index to one-based
+                # spreadsheet row index.
                 cell_id = chr(ord('A') + column_index) + str(row_index + 1)
                 update_range = self._worksheet + '!' + cell_id
                 values = [[value]]
@@ -579,9 +586,9 @@ class Spreadsheet(object):
                     body=body, valueInputOption='RAW').execute()
                 assert response['updatedRows'], 'Bad update ' + str(response)
                 return
-        # Append a new row
+        # Append a new row.
         data = collections.defaultdict(str)
-        data['dropboxrsyncaddress'] = rsync_url
+        data[self.RSYNC_COLUMN] = rsync_url
         data[column] = value
         new_row = [data[x] for x in header]
         body = {'values': [new_row]}
@@ -594,7 +601,7 @@ class Spreadsheet(object):
     def update_high_water_mark(self, rsync_url, date):
         """Updates the date before which it is safe to delete data."""
         date_str = 'x%d-%02d-%02d' % (date.year, date.month, date.day)
-        self.update_data(rsync_url, 'lastsuccessfulcollection', date_str)
+        self.update_data(rsync_url, self.COLLECTION_COLUMN, date_str)
 
 
 def main(argv):  # pragma: no cover
@@ -615,10 +622,10 @@ def main(argv):  # pragma: no cover
     rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
                                           args.rsync_module)
 
-    # Authorize this application to use the Sheets API
+    # Authorize this application to use Google APIs.
     creds = gce.AppAssertionCredentials()
 
-    # Set up the Sheets and Cloud Storage APIs
+    # Set up the Sheets and Cloud Storage APIs.
     http = creds.authorize(httplib2.Http())
     discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
                      'version=v4')
@@ -629,7 +636,7 @@ def main(argv):  # pragma: no cover
     storage_service = apiclient.discovery.build(
         'storage', 'v1', credentials=creds)
 
-    # Find the current progress level from the spreadsheet
+    # Find the current progress level from the spreadsheet.
     progress_level = spreadsheet.get_progress(rsync_url)
     # If the destination directory does not exist, make it exist.
     destination = os.path.join(args.data_dir, args.rsync_host,
