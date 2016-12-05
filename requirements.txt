@@ -3,3 +3,7 @@ freezegun
 google-api-python-client
 mock
 coveralls
+unify
+autoflake
+autopep8
+docformatter
