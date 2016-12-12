@@ -288,7 +288,7 @@ BADBADBAD
         finally:
             shutil.rmtree(temp_d)
 
-    def test_create_tarfile_fails_on_existing_tarfile(self):
+    def test_create_tarfile_clobbers_existing_tarfile(self):
         try:
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
@@ -296,10 +296,11 @@ BADBADBAD
                 file('2016/01/28/test1.txt', 'w').write('hello')
                 file('2016/01/28/test2.txt', 'w').write('goodbye')
                 file('test.tgz', 'w').write('in the way')
-                with self.assertRaises(SystemExit):
-                    scraper.create_tarfile(
-                        '/bin/tar', 'test.tgz',
-                        ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+                self.assertEqual(file('test.tgz').read(), 'in the way')
+                scraper.create_tarfile(
+                    '/bin/tar', 'test.tgz',
+                    ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+                self.assertNotEqual(file('test.tgz').read(), 'in the way')
         finally:
             shutil.rmtree(temp_d)
 

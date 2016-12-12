@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python -u
 # Copyright 2016 Scraper Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,15 +17,15 @@
 
 This is a single-shot program to download data from an MLab node and then upload
 it to Google Cloud Storage.  It is expected that this program will be called
-every hour (or so) by a cron job, and that there will be many such cron jobs
-running in a whole fleet of containers run by Google Container Engine.
+repeatedly and that there will be many such instances of this program running
+running simultaneously on one or more machines.
 
 This program expects to be run on GCE and uses both cloud APIs and the Google
 Sheets API.  Sheets API access is not enabled by default for GCE, and it can't
-be enabled from the web-based GCE instance creation interface, and the scopes
-that a GCE instance has can't be changed after creation. To create a new GCE
-instance named scraper-dev that has access to both cloud APIs and spreadsheet
-apis, you need to use the following command line:
+be enabled from the web-based GCE instance creation interface.  Worse, the
+scopes that a GCE instance has can't be changed after creation. To create a new
+GCE instance named scraper-dev that has access to both cloud APIs and
+spreadsheet apis, you need to use the following command line:
 
    gcloud compute instances create scraper-dev \
        --scopes cloud-platform,https://www.googleapis.com/auth/spreadsheets
@@ -83,7 +83,7 @@ def assert_mlab_hostname(hostname):
     Raises:
       AssertionError if it is not valid
     """
-    assert hostname.endswith('.measurement-lab.org')
+    assert hostname.endswith('.measurement-lab.org'), 'Bad name: %s' % hostname
     assert hostname.split('.') >= 4
     return hostname
 
@@ -274,7 +274,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
             return
         # Download all the files.
         try:
-            logging.info('Downloading %d files', len(files))
+            logging.info('Synching %d files', len(files))
             command = ([rsync_binary, '--files-from', temp.name] + RSYNC_ARGS +
                        [rsync_url, destination])
             subprocess.check_call(command)
@@ -369,10 +369,9 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
       SystemExit if anything fails
     """
     if os.path.exists(tarfile_name):
-        logging.error('The file %s/%s already exists, which is preventing the '
-                      'creation of another file of the same name',
-                      os.getcwd(), tarfile_name)
-        sys.exit(1)
+        logging.warning('The file %s/%s already exists, we are deleting it.',
+                        os.getcwd(), tarfile_name)
+        os.remove(tarfile_name)
     command = [tar_binary, 'cfz', tarfile_name] + component_files
     try:
         subprocess.check_call(command)
@@ -611,6 +610,12 @@ def main(argv):  # pragma: no cover
     """
     # TODO(pboothe) end-to-end tests
     args = parse_cmdline(argv[1:])
+    rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
+                                          args.rsync_module)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d ' +
+        rsync_url + '] %(message)s')
 
     # Ensure that old long-lasting downloads don't get clobbered by new ones.
     lockfile = os.path.join(
@@ -619,8 +624,8 @@ def main(argv):  # pragma: no cover
     lock = acquire_lock_or_die(lockfile)
     atexit.register(lock.release)
 
-    rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
-                                          args.rsync_module)
+    logging.info('Scraping from %s, putting the results in %s', rsync_url,
+                 args.bucket)
 
     # Authorize this application to use Google APIs.
     creds = gce.AppAssertionCredentials()
@@ -631,10 +636,10 @@ def main(argv):  # pragma: no cover
                      'version=v4')
     sheets_service = apiclient.discovery.build(
         'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url,
-        credentials=creds)
+        credentials=creds, cache_discovery=False)
     spreadsheet = Spreadsheet(sheets_service, args.spreadsheet)
     storage_service = apiclient.discovery.build(
-        'storage', 'v1', credentials=creds)
+        'storage', 'v1', credentials=creds, cache_discovery=False)
 
     # Find the current progress level from the spreadsheet.
     progress_level = spreadsheet.get_progress(rsync_url)
@@ -662,10 +667,5 @@ def main(argv):  # pragma: no cover
         spreadsheet.update_high_water_mark(rsync_url, day)
         remove_datafiles(destination, day)
 
-
 if __name__ == '__main__':  # pragma: no cover
-    logging.basicConfig(
-        level=logging.INFO,
-        format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d] '
-        '%(message)s')
     main(sys.argv)
