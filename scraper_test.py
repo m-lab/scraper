@@ -485,6 +485,18 @@ BADBADBAD
         finally:
             shutil.rmtree(temp_d)
 
+    def test_assert_mlab_hostname(self):
+        for good_name in ['mlab4.sea02.measurement-lab.org',
+                          'ndt.iupui.mlab1.nuq0t.measurement-lab.org',
+                          'ndt.iupui.mlab4.nuq05.measurement-lab.org']:
+            self.assertTrue(good_name, scraper.assert_mlab_hostname(good_name))
+        for bad_name in ['ndt.iupui.mlab1.nuq0t.mock-lab.org',
+                         'example.com',
+                         'ndt.iupui.mlab01.nuq0t.measurement-lab.org',
+                         'ndt.iupui.mlab1.nuqq0t.measurement-lab.org']:
+            with self.assertRaises(AssertionError):
+                scraper.assert_mlab_hostname(bad_name)
+
 
 if __name__ == '__main__':  # pragma: no cover
     unittest.main()

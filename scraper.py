@@ -38,6 +38,7 @@ import contextlib
 import datetime
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -83,8 +84,9 @@ def assert_mlab_hostname(hostname):
     Raises:
       AssertionError if it is not valid
     """
-    assert hostname.endswith('.measurement-lab.org'), 'Bad name: %s' % hostname
-    assert hostname.split('.') >= 4
+    assert re.match(
+        r'^(.*\.|)mlab[0-9]\.[a-z]{3}[0-9][0-9t]\.measurement-lab\.org$',
+        hostname), 'Bad hostname: "%s"' % hostname
     return hostname
 
 
