@@ -19,6 +19,7 @@
 # pylint: disable=missing-docstring, no-self-use, too-many-public-methods
 
 import datetime
+import logging
 import os
 import shutil
 import subprocess
@@ -326,6 +327,7 @@ BADBADBAD
                 file('2016/01/28/test1.txt', 'w').write('hello')
                 file('2016/01/28/test2.txt', 'w').write('goodbye')
                 with self.assertRaises(SystemExit):
+                    # Executes successfully, but fails to create the tarfile.
                     scraper.create_tarfile(
                         '/bin/true', 'test.tgz',
                         ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
@@ -339,11 +341,9 @@ BADBADBAD
                 os.makedirs('2016/01/28')
                 file('2016/01/28/test1.txt', 'w').write('hello')
                 file('2016/01/28/test2.txt', 'w').write('goodbye')
-            files = list(
-                scraper.create_tarfiles('/bin/tar', temp_d,
-                                        datetime.date(2016, 1, 28),
-                                        'mlab9.dne04.measurement-lab.org',
-                                        'exper', 100000))
+            files = [f for f, _t in scraper.create_tarfiles(
+                '/bin/tar', temp_d, datetime.date(2016, 1, 28),
+                'mlab9.dne04.measurement-lab.org', 'exper', 100000)]
             self.assertEqual(files,
                              ['20160128T000000Z-mlab9-dne04-exper-0000.tgz'])
             with scraper.chdir(temp_d):
@@ -370,11 +370,9 @@ BADBADBAD
                 file('2016/01/28/test2.txt', 'w').write('goodbye')
             # By setting the max filesize as 4 bytes, we will end up creating a
             # separate tarfile for each test file.
-            files = list(
-                scraper.create_tarfiles('/bin/tar', temp_d,
-                                        datetime.date(2016, 1, 28),
-                                        'mlab9.dne04.measurement-lab.org',
-                                        'exper', 4))
+            files = [f for f, _t in scraper.create_tarfiles(
+                '/bin/tar', temp_d, datetime.date(2016, 1, 28),
+                'mlab9.dne04.measurement-lab.org', 'exper', 4)]
             self.assertEqual(files, [
                 '20160128T000000Z-mlab9-dne04-exper-0000.tgz',
                 '20160128T000000Z-mlab9-dne04-exper-0001.tgz'
@@ -407,7 +405,7 @@ BADBADBAD
             [u'dropboxrsyncaddress', u'lastsuccessfulcollection'],
             [1, 2]]
         sheet = scraper.Spreadsheet(None, None)
-        high_water_mark = sheet.get_progress('fsdfds')
+        high_water_mark = sheet.get_progress('not in sheet')
         self.assertEqual(high_water_mark, datetime.date(2009, 1, 1))
 
     @mock.patch.object(scraper.Spreadsheet, 'get_data', return_value=[])
@@ -496,6 +494,41 @@ BADBADBAD
                          'ndt.iupui.mlab1.nuqq0t.measurement-lab.org']:
             with self.assertRaises(AssertionError):
                 scraper.assert_mlab_hostname(bad_name)
+
+    @mock.patch.object(scraper.Spreadsheet, 'update_data')
+    def test_update_debug_msg(self, patched_update_data):
+        sheet = scraper.Spreadsheet(None, None)
+        sheet.update_debug_message('rsync://localhost/ndt', 'msg')
+        patched_update_data.assert_called_once_with(
+            'rsync://localhost/ndt', 'errorsincelastsuccessful', 'msg')
+
+    @freezegun.freeze_time('2016-01-28 07:43:16 UTC')
+    @mock.patch.object(scraper.Spreadsheet, 'update_data')
+    def test_update_last_collection(self, patched_update_data):
+        sheet = scraper.Spreadsheet(None, None)
+        sheet.update_last_collection('rsync://localhost/ndt')
+        patched_update_data.assert_called_once_with('rsync://localhost/ndt',
+                                                    'lastcollectionattempt',
+                                                    'x2016-01-28-07:43')
+
+    @mock.patch.object(scraper.Spreadsheet, 'update_data')
+    def test_update_mtime(self, patched_update_data):
+        sheet = scraper.Spreadsheet(None, None)
+        sheet.update_mtime('rsync://localhost/ndt', 7)
+        patched_update_data.assert_called_once_with(
+            'rsync://localhost/ndt', 'maxrawfilemtimearchived', 7)
+
+    @mock.patch.object(scraper.Spreadsheet, 'update_data')
+    def test_spreadsheet_log_handler(self, patched_update_data):
+        sheet = scraper.Spreadsheet(None, None)
+        loghandler = scraper.SpreadsheetLogHandler('rsync://local/ndt', sheet)
+        logger = logging.getLogger('temp_test')
+        logger.setLevel(logging.ERROR)
+        logger.addHandler(loghandler)
+        logger.info('INFORMATIVE')
+        patched_update_data.assert_not_called()
+        logger.error('BADNESS')
+        patched_update_data.assert_called_once()
 
 
 if __name__ == '__main__':  # pragma: no cover

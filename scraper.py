@@ -174,7 +174,7 @@ def parse_cmdline(args):
 
 
 # Use IPv4, compression, and limit total bandwidth usage to 10 Mbps
-RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000']
+RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000', '--times']
 
 
 def list_rsync_files(rsync_binary, rsync_url):
@@ -415,6 +415,10 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
       host: the hostname for the tar file
       experiment: the experiment with data contained in this tarfile
       max_uncompressed_size: the max size of an individual tarfile
+
+    Yields:
+      A tuple of the name of the tarfile created and the most recent mtime of
+      any tarfile's component files
     """
     node, site = node_and_site(host)
     # Ensure that the filenames we generate match the existing files that have
@@ -426,17 +430,20 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
     tarfile_size = 0
     tarfile_files = []
     tarfile_index = 0
+    max_mtime = 0
     with chdir(directory):
         for filename in sorted(os.listdir(day_dir)):
             filename = os.path.join(day_dir, filename)
-            filesize = os.stat(filename).st_size
+            filestat = os.stat(filename)
+            filesize = filestat.st_size
+            max_mtime = max(max_mtime, int(filestat.st_mtime))
             if (tarfile_files and
                     tarfile_size + filesize > max_uncompressed_size):
                 tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                              filename_suffix)
                 create_tarfile(tar_binary, tarfile_name, tarfile_files)
                 logging.info('Created %s', tarfile_name)
-                yield tarfile_name
+                yield tarfile_name, max_mtime
                 tarfile_files = []
                 tarfile_size = 0
                 tarfile_index += 1
@@ -447,7 +454,7 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
                                          filename_suffix)
             create_tarfile(tar_binary, tarfile_name, tarfile_files)
             logging.info('Created %s', tarfile_name)
-            yield tarfile_name
+            yield tarfile_name, max_mtime
 
 
 def upload_tarfile(service, tgz_filename, date, bucket):  # pragma: no cover
@@ -505,6 +512,9 @@ class Spreadsheet(object):
 
     RSYNC_COLUMN = 'dropboxrsyncaddress'
     COLLECTION_COLUMN = 'lastsuccessfulcollection'
+    DEBUG_MESSAGE_COLUMN = 'errorsincelastsuccessful'
+    LAST_COLLECTION_COLUMN = 'lastcollectionattempt'
+    MTIME_COLUMN = 'maxrawfilemtimearchived'
 
     def __init__(self, service, spreadsheet,
                  worksheet='Drop box status (auto updated)',
@@ -604,11 +614,42 @@ class Spreadsheet(object):
         date_str = 'x%d-%02d-%02d' % (date.year, date.month, date.day)
         self.update_data(rsync_url, self.COLLECTION_COLUMN, date_str)
 
+    def update_debug_message(self, rsync_url, message):
+        """Updates the debug message on the spreadsheet."""
+        self.update_data(rsync_url, self.DEBUG_MESSAGE_COLUMN, message)
+
+    def update_last_collection(self, rsync_url):
+        """Updates the last collection time on the spreadsheet."""
+        text = datetime.datetime.utcnow().strftime('x%Y-%02m-%02d-%02H:%02M')
+        self.update_data(rsync_url, self.LAST_COLLECTION_COLUMN, text)
+
+    def update_mtime(self, rsync_url, mtime):
+        """Updates the mtime column on the spreadsheet."""
+        self.update_data(rsync_url, self.MTIME_COLUMN, mtime)
+
+
+class SpreadsheetLogHandler(logging.Handler):
+    """Handles error log messages by writing them to the shared spreadsheet."""
+
+    def __init__(self, rsync_url, spreadsheet):
+        logging.Handler.__init__(self, level=logging.ERROR)
+        self.setFormatter(
+            logging.Formatter('[%(asctime)s %(levelname)s '
+                              '%(filename)s:%(lineno)d] %(message)s'))
+        self._rsync_url = rsync_url
+        self._sheet = spreadsheet
+
+    def handle(self, record):
+        self._sheet.update_debug_message(self._rsync_url, self.format(record))
+
+    def emit(self, _record):  # pragma: no cover
+        """Abstract in the base class, overwritten to keep the linter happy."""
+
 
 def main(argv):  # pragma: no cover
     """Run the download and upload from end-to-end.
 
-    This should be called in a container, by a cron job.
+    This should be called in a container, repeatedly over time.
     """
     # TODO(pboothe) end-to-end tests
     args = parse_cmdline(argv[1:])
@@ -643,6 +684,10 @@ def main(argv):  # pragma: no cover
     storage_service = apiclient.discovery.build(
         'storage', 'v1', credentials=creds, cache_discovery=False)
 
+    spreadsheet.update_last_collection(rsync_url)
+    logging.getLogger().addHandler(
+        SpreadsheetLogHandler(rsync_url, spreadsheet))
+
     # Find the current progress level from the spreadsheet.
     progress_level = spreadsheet.get_progress(rsync_url)
     # If the destination directory does not exist, make it exist.
@@ -661,13 +706,15 @@ def main(argv):  # pragma: no cover
     # and delete the local copies of all successfully-uploaded data.
     new_high_water_mark = max_new_high_water_mark()
     for day in find_all_days_to_upload(destination, new_high_water_mark):
-        for tgz_filename in create_tarfiles(args.tar_binary, destination, day,
-                                            args.rsync_host, args.rsync_module,
-                                            args.max_uncompressed_size):
+        for tgz_filename, mtime in create_tarfiles(
+                args.tar_binary, destination, day, args.rsync_host,
+                args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day, args.bucket)
+            spreadsheet.update_mtime(rsync_url, mtime)
             os.remove(tgz_filename)
         spreadsheet.update_high_water_mark(rsync_url, day)
         remove_datafiles(destination, day)
+    spreadsheet.update_debug_message(rsync_url, '')
 
 if __name__ == '__main__':  # pragma: no cover
     main(sys.argv)
