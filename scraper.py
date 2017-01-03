@@ -18,7 +18,7 @@
 This is a single-shot program to download data from an MLab node and then upload
 it to Google Cloud Storage.  It is expected that this program will be called
 repeatedly and that there will be many such instances of this program running
-running simultaneously on one or more machines.
+simultaneously on one or more machines.
 
 This program expects to be run on GCE and uses both cloud APIs and the Google
 Sheets API.  Sheets API access is not enabled by default for GCE, and it can't
@@ -85,7 +85,7 @@ def assert_mlab_hostname(hostname):
       AssertionError if it is not valid
     """
     assert re.match(
-        r'^(.*\.|)mlab[0-9]\.[a-z]{3}[0-9][0-9t]\.measurement-lab\.org$',
+        r'^(.*\.)?mlab[1-9]\.[a-z]{3}[0-9][1-9t]\.measurement-lab\.org$',
         hostname), 'Bad hostname: "%s"' % hostname
     return hostname
 
@@ -371,9 +371,10 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
       SystemExit if anything fails
     """
     if os.path.exists(tarfile_name):
-        logging.warning('The file %s/%s already exists, we are deleting it.',
-                        os.getcwd(), tarfile_name)
-        os.remove(tarfile_name)
+        logging.error('The file %s/%s already exists, which is preventing the '
+                      'creation of another file of the same name',
+                      os.getcwd(), tarfile_name)
+        sys.exit(1)
     command = [tar_binary, 'cfz', tarfile_name] + component_files
     try:
         subprocess.check_call(command)
@@ -401,12 +402,13 @@ def node_and_site(host):
     return (names[-4], names[-3])
 
 
-def create_tarfiles(tar_binary, directory, day, host, experiment,
-                    max_uncompressed_size):
+def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
+                              max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
 
     Because one day may contain a lot of data, we create a series of tarfiles,
     none of which may contain more than max_uncompressed_size buytes of data.
+    Upon resumption, remove the tarfile that was created.
 
     Args:
       tar_binary: the full pathname for the tar binary
@@ -441,9 +443,13 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
                     tarfile_size + filesize > max_uncompressed_size):
                 tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                              filename_suffix)
-                create_tarfile(tar_binary, tarfile_name, tarfile_files)
-                logging.info('Created %s', tarfile_name)
-                yield tarfile_name, max_mtime
+                try:
+                    create_tarfile(tar_binary, tarfile_name, tarfile_files)
+                    logging.info('Created %s', tarfile_name)
+                    yield tarfile_name, max_mtime
+                finally:
+                    logging.info('removing %s', tarfile_name)
+                    os.remove(tarfile_name)
                 tarfile_files = []
                 tarfile_size = 0
                 tarfile_index += 1
@@ -452,9 +458,13 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
         if tarfile_files:
             tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                          filename_suffix)
-            create_tarfile(tar_binary, tarfile_name, tarfile_files)
-            logging.info('Created %s', tarfile_name)
-            yield tarfile_name, max_mtime
+            try:
+                create_tarfile(tar_binary, tarfile_name, tarfile_files)
+                logging.info('Created %s', tarfile_name)
+                yield tarfile_name, max_mtime
+            finally:
+                logging.info('removing %s', tarfile_name)
+                os.remove(tarfile_name)
 
 
 def upload_tarfile(service, tgz_filename, date, bucket):  # pragma: no cover
@@ -706,12 +716,11 @@ def main(argv):  # pragma: no cover
     # and delete the local copies of all successfully-uploaded data.
     new_high_water_mark = max_new_high_water_mark()
     for day in find_all_days_to_upload(destination, new_high_water_mark):
-        for tgz_filename, mtime in create_tarfiles(
+        for tgz_filename, mtime in create_temporary_tarfiles(
                 args.tar_binary, destination, day, args.rsync_host,
                 args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day, args.bucket)
             spreadsheet.update_mtime(rsync_url, mtime)
-            os.remove(tgz_filename)
         spreadsheet.update_high_water_mark(rsync_url, day)
         remove_datafiles(destination, day)
     spreadsheet.update_debug_message(rsync_url, '')
