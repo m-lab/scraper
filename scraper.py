@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/python -u
 # Copyright 2016 Scraper Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,15 +17,15 @@
 
 This is a single-shot program to download data from an MLab node and then upload
 it to Google Cloud Storage.  It is expected that this program will be called
-every hour (or so) by a cron job, and that there will be many such cron jobs
-running in a whole fleet of containers run by Google Container Engine.
+repeatedly and that there will be many such instances of this program running
+simultaneously on one or more machines.
 
 This program expects to be run on GCE and uses both cloud APIs and the Google
 Sheets API.  Sheets API access is not enabled by default for GCE, and it can't
-be enabled from the web-based GCE instance creation interface, and the scopes
-that a GCE instance has can't be changed after creation. To create a new GCE
-instance named scraper-dev that has access to both cloud APIs and spreadsheet
-apis, you need to use the following command line:
+be enabled from the web-based GCE instance creation interface.  Worse, the
+scopes that a GCE instance has can't be changed after creation. To create a new
+GCE instance named scraper-dev that has access to both cloud APIs and
+spreadsheet apis, you need to use the following command line:
 
    gcloud compute instances create scraper-dev \
        --scopes cloud-platform,https://www.googleapis.com/auth/spreadsheets
@@ -38,6 +38,7 @@ import contextlib
 import datetime
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -83,8 +84,9 @@ def assert_mlab_hostname(hostname):
     Raises:
       AssertionError if it is not valid
     """
-    assert hostname.endswith('.measurement-lab.org')
-    assert hostname.split('.') >= 4
+    assert re.match(
+        r'^(.*\.)?mlab[1-9]\.[a-z]{3}[0-9][0-9t]\.measurement-lab\.org$',
+        hostname), 'Bad hostname: "%s"' % hostname
     return hostname
 
 
@@ -172,7 +174,7 @@ def parse_cmdline(args):
 
 
 # Use IPv4, compression, and limit total bandwidth usage to 10 Mbps
-RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000']
+RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000', '--times']
 
 
 def list_rsync_files(rsync_binary, rsync_url):
@@ -274,7 +276,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
             return
         # Download all the files.
         try:
-            logging.info('Downloading %d files', len(files))
+            logging.info('Synching %d files', len(files))
             command = ([rsync_binary, '--files-from', temp.name] + RSYNC_ARGS +
                        [rsync_url, destination])
             subprocess.check_call(command)
@@ -400,12 +402,13 @@ def node_and_site(host):
     return (names[-4], names[-3])
 
 
-def create_tarfiles(tar_binary, directory, day, host, experiment,
-                    max_uncompressed_size):
+def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
+                              max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
 
     Because one day may contain a lot of data, we create a series of tarfiles,
     none of which may contain more than max_uncompressed_size buytes of data.
+    Upon resumption, remove the tarfile that was created.
 
     Args:
       tar_binary: the full pathname for the tar binary
@@ -414,6 +417,10 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
       host: the hostname for the tar file
       experiment: the experiment with data contained in this tarfile
       max_uncompressed_size: the max size of an individual tarfile
+
+    Yields:
+      A tuple of the name of the tarfile created and the most recent mtime of
+      any tarfile's component files
     """
     node, site = node_and_site(host)
     # Ensure that the filenames we generate match the existing files that have
@@ -425,17 +432,24 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
     tarfile_size = 0
     tarfile_files = []
     tarfile_index = 0
+    max_mtime = 0
     with chdir(directory):
         for filename in sorted(os.listdir(day_dir)):
             filename = os.path.join(day_dir, filename)
-            filesize = os.stat(filename).st_size
+            filestat = os.stat(filename)
+            filesize = filestat.st_size
+            max_mtime = max(max_mtime, int(filestat.st_mtime))
             if (tarfile_files and
                     tarfile_size + filesize > max_uncompressed_size):
                 tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                              filename_suffix)
-                create_tarfile(tar_binary, tarfile_name, tarfile_files)
-                logging.info('Created %s', tarfile_name)
-                yield tarfile_name
+                try:
+                    create_tarfile(tar_binary, tarfile_name, tarfile_files)
+                    logging.info('Created %s', tarfile_name)
+                    yield tarfile_name, max_mtime
+                finally:
+                    logging.info('removing %s', tarfile_name)
+                    os.remove(tarfile_name)
                 tarfile_files = []
                 tarfile_size = 0
                 tarfile_index += 1
@@ -444,9 +458,13 @@ def create_tarfiles(tar_binary, directory, day, host, experiment,
         if tarfile_files:
             tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                          filename_suffix)
-            create_tarfile(tar_binary, tarfile_name, tarfile_files)
-            logging.info('Created %s', tarfile_name)
-            yield tarfile_name
+            try:
+                create_tarfile(tar_binary, tarfile_name, tarfile_files)
+                logging.info('Created %s', tarfile_name)
+                yield tarfile_name, max_mtime
+            finally:
+                logging.info('removing %s', tarfile_name)
+                os.remove(tarfile_name)
 
 
 def upload_tarfile(service, tgz_filename, date, bucket):  # pragma: no cover
@@ -504,6 +522,9 @@ class Spreadsheet(object):
 
     RSYNC_COLUMN = 'dropboxrsyncaddress'
     COLLECTION_COLUMN = 'lastsuccessfulcollection'
+    DEBUG_MESSAGE_COLUMN = 'errorsincelastsuccessful'
+    LAST_COLLECTION_COLUMN = 'lastcollectionattempt'
+    MTIME_COLUMN = 'maxrawfilemtimearchived'
 
     def __init__(self, service, spreadsheet,
                  worksheet='Drop box status (auto updated)',
@@ -603,14 +624,51 @@ class Spreadsheet(object):
         date_str = 'x%d-%02d-%02d' % (date.year, date.month, date.day)
         self.update_data(rsync_url, self.COLLECTION_COLUMN, date_str)
 
+    def update_debug_message(self, rsync_url, message):
+        """Updates the debug message on the spreadsheet."""
+        self.update_data(rsync_url, self.DEBUG_MESSAGE_COLUMN, message)
+
+    def update_last_collection(self, rsync_url):
+        """Updates the last collection time on the spreadsheet."""
+        text = datetime.datetime.utcnow().strftime('x%Y-%02m-%02d-%02H:%02M')
+        self.update_data(rsync_url, self.LAST_COLLECTION_COLUMN, text)
+
+    def update_mtime(self, rsync_url, mtime):
+        """Updates the mtime column on the spreadsheet."""
+        self.update_data(rsync_url, self.MTIME_COLUMN, mtime)
+
+
+class SpreadsheetLogHandler(logging.Handler):
+    """Handles error log messages by writing them to the shared spreadsheet."""
+
+    def __init__(self, rsync_url, spreadsheet):
+        logging.Handler.__init__(self, level=logging.ERROR)
+        self.setFormatter(
+            logging.Formatter('[%(asctime)s %(levelname)s '
+                              '%(filename)s:%(lineno)d] %(message)s'))
+        self._rsync_url = rsync_url
+        self._sheet = spreadsheet
+
+    def handle(self, record):
+        self._sheet.update_debug_message(self._rsync_url, self.format(record))
+
+    def emit(self, _record):  # pragma: no cover
+        """Abstract in the base class, overwritten to keep the linter happy."""
+
 
 def main(argv):  # pragma: no cover
     """Run the download and upload from end-to-end.
 
-    This should be called in a container, by a cron job.
+    This should be called in a container, repeatedly over time.
     """
     # TODO(pboothe) end-to-end tests
     args = parse_cmdline(argv[1:])
+    rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
+                                          args.rsync_module)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d ' +
+        rsync_url + '] %(message)s')
 
     # Ensure that old long-lasting downloads don't get clobbered by new ones.
     lockfile = os.path.join(
@@ -619,8 +677,8 @@ def main(argv):  # pragma: no cover
     lock = acquire_lock_or_die(lockfile)
     atexit.register(lock.release)
 
-    rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
-                                          args.rsync_module)
+    logging.info('Scraping from %s, putting the results in %s', rsync_url,
+                 args.bucket)
 
     # Authorize this application to use Google APIs.
     creds = gce.AppAssertionCredentials()
@@ -631,10 +689,14 @@ def main(argv):  # pragma: no cover
                      'version=v4')
     sheets_service = apiclient.discovery.build(
         'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url,
-        credentials=creds)
+        credentials=creds, cache_discovery=False)
     spreadsheet = Spreadsheet(sheets_service, args.spreadsheet)
     storage_service = apiclient.discovery.build(
-        'storage', 'v1', credentials=creds)
+        'storage', 'v1', credentials=creds, cache_discovery=False)
+
+    spreadsheet.update_last_collection(rsync_url)
+    logging.getLogger().addHandler(
+        SpreadsheetLogHandler(rsync_url, spreadsheet))
 
     # Find the current progress level from the spreadsheet.
     progress_level = spreadsheet.get_progress(rsync_url)
@@ -654,18 +716,14 @@ def main(argv):  # pragma: no cover
     # and delete the local copies of all successfully-uploaded data.
     new_high_water_mark = max_new_high_water_mark()
     for day in find_all_days_to_upload(destination, new_high_water_mark):
-        for tgz_filename in create_tarfiles(args.tar_binary, destination, day,
-                                            args.rsync_host, args.rsync_module,
-                                            args.max_uncompressed_size):
+        for tgz_filename, mtime in create_temporary_tarfiles(
+                args.tar_binary, destination, day, args.rsync_host,
+                args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day, args.bucket)
-            os.remove(tgz_filename)
+            spreadsheet.update_mtime(rsync_url, mtime)
         spreadsheet.update_high_water_mark(rsync_url, day)
         remove_datafiles(destination, day)
-
+    spreadsheet.update_debug_message(rsync_url, '')
 
 if __name__ == '__main__':  # pragma: no cover
-    logging.basicConfig(
-        level=logging.INFO,
-        format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d] '
-        '%(message)s')
     main(sys.argv)

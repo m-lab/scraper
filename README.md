@@ -9,3 +9,7 @@ This repo is fully integrated with Travis, but with one wrinkle.  The
 end-to-end test can't (currently) be run on Travis.  So the end-to-end test has
 been included as a requirement of the pre-commit git hook.  This means that you
 can only develop scraper code in a GCE instance.
+
+# Requirements
+
+The libraries required to run the project are in `requirements.txt`, the libraries required to run the tests and the commit hooks are in `test-requirements.txt`.
