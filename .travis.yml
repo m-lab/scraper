@@ -3,6 +3,7 @@ cache: pip
 python: "2.7"
 install:
   - pip install -r requirements.txt
+  - pip install -r test-requirements.txt
   - pip install coveralls
 script:
   coverage run --source='.' -m unittest discover --pattern='*_test.py'
