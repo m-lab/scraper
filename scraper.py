@@ -85,7 +85,7 @@ def assert_mlab_hostname(hostname):
       AssertionError if it is not valid
     """
     assert re.match(
-        r'^(.*\.)?mlab[1-9]\.[a-z]{3}[0-9][1-9t]\.measurement-lab\.org$',
+        r'^(.*\.)?mlab[1-9]\.[a-z]{3}[0-9][0-9t]\.measurement-lab\.org$',
         hostname), 'Bad hostname: "%s"' % hostname
     return hostname
 
