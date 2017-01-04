@@ -1,10 +1,11 @@
 #!/bin/bash
 
 RSYNC_HOST=$1
+RSYNC_MODULE=$2
 
 while true; do
   /scraper.py --rsync_host=${RSYNC_HOST} --lockfile_dir=locks \
-      --rsync_module=ndt --data_dir=tmp \
+      --rsync_module=${RSYNC_MODULE} --data_dir=tmp \
       --spreadsheet=143pU25GJidW2KZ_93hgzHdqTqq22wgdxR_3tt3dvrJY \
       --rsync_binary=/usr/bin/rsync 
   # Lose any and all data races with stdout and stderr from the preceding
