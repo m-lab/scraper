@@ -5,3 +5,4 @@ unify
 autoflake
 autopep8
 docformatter
+pylint

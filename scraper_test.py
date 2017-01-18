@@ -339,28 +339,37 @@ BADBADBAD
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
                 os.makedirs('2016/01/28')
-                file('2016/01/28/test1.txt', 'w').write('hello')
-                file('2016/01/28/test2.txt', 'w').write('goodbye')
+                with scraper.chdir('2016/01/28'):
+                    file('test1.txt', 'w').write('hello')
+                    file('test2.txt', 'w').write('goodbye')
+                    file('test3.txt', 'w').write('compressed')
+                    subprocess.check_call(['/bin/gzip', 'test3.txt'])
+                    self.assertFalse(os.path.exists('test3.txt'))
+                    self.assertTrue(os.path.exists('test3.txt.gz'))
             files = [f for f, _t in scraper.create_temporary_tarfiles(
-                '/bin/tar', temp_d, datetime.date(2016, 1, 28),
+                '/bin/tar', '/bin/gunzip', temp_d, datetime.date(2016, 1, 28),
                 'mlab9.dne04.measurement-lab.org', 'exper', 100000)]
             self.assertEqual(files,
                              ['20160128T000000Z-mlab9-dne04-exper-0000.tgz'])
             with scraper.chdir(temp_d):
                 gen = scraper.create_temporary_tarfiles(
-                    '/bin/tar', temp_d, datetime.date(2016, 1, 28),
+                    '/bin/tar', '/bin/gunzip', temp_d,
+                    datetime.date(2016, 1, 28),
                     'mlab9.dne04.measurement-lab.org', 'exper', 100000)
                 fname, _ = gen.next()
                 self.assertTrue(os.path.isfile(fname))
                 shutil.rmtree('2016')
                 self.assertFalse(os.path.exists('2016/01/28/test1.txt'))
                 self.assertFalse(os.path.exists('2016/01/28/test2.txt'))
+                self.assertFalse(os.path.exists('2016/01/28/test3.txt'))
+                self.assertFalse(os.path.exists('2016/01/28/test3.txt.gz'))
                 subprocess.check_call([
                     '/bin/tar', 'xfz',
                     '20160128T000000Z-mlab9-dne04-exper-0000.tgz'
                 ])
                 self.assertTrue(os.path.exists('2016/01/28/test1.txt'))
                 self.assertTrue(os.path.exists('2016/01/28/test2.txt'))
+                self.assertTrue(os.path.exists('2016/01/28/test3.txt'))
                 with self.assertRaises(StopIteration):
                     gen.next()
         finally:
@@ -376,7 +385,7 @@ BADBADBAD
             # By setting the max filesize as 4 bytes, we will end up creating a
             # separate tarfile for each test file.
             files = [f for f, _t in scraper.create_temporary_tarfiles(
-                '/bin/tar', temp_d, datetime.date(2016, 1, 28),
+                '/bin/tar', '/bin/gunzip', temp_d, datetime.date(2016, 1, 28),
                 'mlab9.dne04.measurement-lab.org', 'exper', 4)]
             self.assertEqual(files, [
                 '20160128T000000Z-mlab9-dne04-exper-0000.tgz',
@@ -384,7 +393,8 @@ BADBADBAD
             ])
             with scraper.chdir(temp_d):
                 gen = scraper.create_temporary_tarfiles(
-                    '/bin/tar', temp_d, datetime.date(2016, 1, 28),
+                    '/bin/tar', '/bin/gunzip', temp_d,
+                    datetime.date(2016, 1, 28),
                     'mlab9.dne04.measurement-lab.org', 'exper', 4)
                 gen.next()
                 table1 = subprocess.check_output([
@@ -535,6 +545,50 @@ BADBADBAD
         patched_update_data.assert_not_called()
         logger.error('BADNESS')
         patched_update_data.assert_called_once()
+
+    def test_decompress_file(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                file('test', 'w').write('testdata')
+                subprocess.check_call(['/bin/gzip', 'test'])
+                self.assertTrue(os.path.exists('test.gz'))
+                self.assertFalse(os.path.exists('test'))
+                self.assertEqual(
+                    'test', scraper.decompress_file('/bin/gunzip', 'test.gz'))
+                self.assertTrue(os.path.exists('test.gz'))
+                self.assertTrue(os.path.exists('test'))
+                self.assertEqual(
+                    'test', scraper.decompress_file('/bin/gunzip', 'test.gz'))
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_decompress_file_gunzip_failure(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                file('test', 'w').write('testdata')
+                subprocess.check_call(['/bin/gzip', 'test'])
+                self.assertTrue(os.path.exists('test.gz'))
+                self.assertFalse(os.path.exists('test'))
+                with self.assertRaises(scraper.DecompressionException):
+                    scraper.decompress_file('/bin/false', 'test.gz')
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_attemp_decompression_disappearing_file(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                file('test', 'w').write('testdata')
+                subprocess.check_call(['/bin/gzip', 'test'])
+                self.assertTrue(os.path.exists('test.gz'))
+                self.assertFalse(os.path.exists('test'))
+                self.assertEqual(
+                    'test.gz',
+                    scraper.attempt_decompression('/bin/true', 'test.gz'))
+        finally:
+            shutil.rmtree(temp_d)
 
 
 if __name__ == '__main__':  # pragma: no cover
