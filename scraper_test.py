@@ -595,7 +595,8 @@ BADBADBAD
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
                 file('test', 'w').write('testdata')
-                subprocess.check_call(['/bin/gzip', '--keep', 'test'])
+                subprocess.check_call(['/bin/gzip', 'test'])
+                file('test', 'w').write('testdata')
                 self.assertTrue(os.path.exists('test.gz'))
                 self.assertTrue(os.path.exists('test'))
                 self.assertEqual(

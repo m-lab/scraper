@@ -469,7 +469,7 @@ def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
     with chdir(directory):
         for filename in sorted(os.listdir(day_dir)):
             filename = os.path.join(day_dir, filename)
-            # TODO(https://github.com/m-lab/scraper/issues/7):
+            # TODO(https://github.com/m-lab/scraper/issues/7) compression
             # Stop with this compression and decompression nonsense by deleting
             # all code between this comment and the one that says "END TODO"
             if filename.endswith('.gz'):
@@ -700,7 +700,7 @@ def main(argv):  # pragma: no cover
 
     This should be called in a container, repeatedly over time.
     """
-    # TODO(pboothe) end-to-end tests
+    # TODO(https://github.com/m-lab/scraper/issues/9) end-to-end tests
     args = parse_cmdline(argv[1:])
     rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
                                           args.rsync_module)
