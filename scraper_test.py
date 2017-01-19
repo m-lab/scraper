@@ -546,7 +546,7 @@ BADBADBAD
         logger.error('BADNESS')
         patched_update_data.assert_called_once()
 
-    def test_decompress_file(self):
+    def test_attempt_decompression(self):
         try:
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
@@ -555,15 +555,14 @@ BADBADBAD
                 self.assertTrue(os.path.exists('test.gz'))
                 self.assertFalse(os.path.exists('test'))
                 self.assertEqual(
-                    'test', scraper.decompress_file('/bin/gunzip', 'test.gz'))
-                self.assertTrue(os.path.exists('test.gz'))
+                    'test',
+                    scraper.attempt_decompression('/bin/gunzip', 'test.gz'))
+                self.assertFalse(os.path.exists('test.gz'))
                 self.assertTrue(os.path.exists('test'))
-                self.assertEqual(
-                    'test', scraper.decompress_file('/bin/gunzip', 'test.gz'))
         finally:
             shutil.rmtree(temp_d)
 
-    def test_decompress_file_gunzip_failure(self):
+    def test_attempt_decompression_gunzip_failure(self):
         try:
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
@@ -571,12 +570,13 @@ BADBADBAD
                 subprocess.check_call(['/bin/gzip', 'test'])
                 self.assertTrue(os.path.exists('test.gz'))
                 self.assertFalse(os.path.exists('test'))
-                with self.assertRaises(scraper.DecompressionException):
-                    scraper.decompress_file('/bin/false', 'test.gz')
+                self.assertEqual(
+                    'test.gz',
+                    scraper.attempt_decompression('/bin/false', 'test.gz'))
         finally:
             shutil.rmtree(temp_d)
 
-    def test_attemp_decompression_disappearing_file(self):
+    def test_attempt_decompression_disappearing_file(self):
         try:
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
@@ -590,6 +590,21 @@ BADBADBAD
         finally:
             shutil.rmtree(temp_d)
 
+    def test_attempt_decompression_no_clobber(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                file('test', 'w').write('testdata')
+                subprocess.check_call(['/bin/gzip', '--keep', 'test'])
+                self.assertTrue(os.path.exists('test.gz'))
+                self.assertTrue(os.path.exists('test'))
+                self.assertEqual(
+                    'test',
+                    scraper.attempt_decompression('/bin/gunzip', 'test.gz'))
+                self.assertTrue(os.path.exists('test.gz'))
+                self.assertTrue(os.path.exists('test'))
+        finally:
+            shutil.rmtree(temp_d)
 
 if __name__ == '__main__':  # pragma: no cover
     unittest.main()

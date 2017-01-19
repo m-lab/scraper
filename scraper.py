@@ -409,42 +409,30 @@ def node_and_site(host):
     return (names[-4], names[-3])
 
 
-class DecompressionException(Exception):
-    """A special exception type for decompression failing."""
-
-
-def decompress_file(gunzip_binary, filename):
-    """Decompress the given file or raise a DecompressionException."""
-    basename = filename[:-3]
-    if os.path.exists(basename):
-        logging.warning(
-            'Assuming that already-existing file %s is the unzipped '
-            'version of %s', filename, basename)
-        return basename
-    command = [gunzip_binary, '--keep', filename]
-    try:
-        subprocess.check_call(command)
-    except subprocess.CalledProcessError as error:
-        raise DecompressionException('gunzip failed on %s (%s)' %
-                                     (filename, error.message))
-    if not os.path.exists(basename):
-        raise DecompressionException('gunzip of %s failed to create %s',
-                                     filename, basename)
-    return basename
-
-
 def attempt_decompression(gunzip_binary, filename):
     """Attempt to decompress a .gz file.
 
     If the attempt fails, return the original filename. Otherwise return the new
     filename.
     """
+    assert filename.endswith('.gz'), 'Bad filename to decompress: ' + filename
+    basename = filename[:-3]
+    if os.path.exists(basename):
+        logging.warning(
+            'Assuming that already-existing file %s is the unzipped '
+            'version of %s', basename, filename)
+        return basename
+    command = [gunzip_binary, filename]
     try:
-        return decompress_file(gunzip_binary, filename)
-    except DecompressionException as error:
-        logging.error('Decompression of %s failed (%s)', filename,
-                      error.message)
+        subprocess.check_call(command)
+    except subprocess.CalledProcessError as error:
+        logging.error('gunzip failed on %s (%s)', filename, error.message)
         return filename
+    if not os.path.exists(basename):
+        logging.error('gunzip of %s failed to create %s', filename,
+                      basename)
+        return filename
+    return basename
 
 
 def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
