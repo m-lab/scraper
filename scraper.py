@@ -157,6 +157,13 @@ def parse_cmdline(args):
         required=False,
         help='The location of the tar binary (default is /bin/tar)')
     parser.add_argument(
+        '--gunzip_binary',
+        metavar='GUNZIP',
+        type=str,
+        default='/bin/gunzip',
+        required=False,
+        help='The location of the gunzip binary (default is /bin/gunzip)')
+    parser.add_argument(
         '--max_uncompressed_size',
         metavar='SIZE',
         type=int,
@@ -402,8 +409,34 @@ def node_and_site(host):
     return (names[-4], names[-3])
 
 
-def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
-                              max_uncompressed_size):
+def attempt_decompression(gunzip_binary, filename):
+    """Attempt to decompress a .gz file.
+
+    If the attempt fails, return the original filename. Otherwise return the new
+    filename.
+    """
+    assert filename.endswith('.gz'), 'Bad filename to decompress: ' + filename
+    basename = filename[:-3]
+    if os.path.exists(basename):
+        logging.warning(
+            'Assuming that already-existing file %s is the unzipped '
+            'version of %s', basename, filename)
+        return basename
+    command = [gunzip_binary, filename]
+    try:
+        subprocess.check_call(command)
+    except subprocess.CalledProcessError as error:
+        logging.error('gunzip failed on %s (%s)', filename, error.message)
+        return filename
+    if not os.path.exists(basename):
+        logging.error('gunzip of %s failed to create %s', filename,
+                      basename)
+        return filename
+    return basename
+
+
+def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
+                              experiment, max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
 
     Because one day may contain a lot of data, we create a series of tarfiles,
@@ -436,6 +469,12 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
     with chdir(directory):
         for filename in sorted(os.listdir(day_dir)):
             filename = os.path.join(day_dir, filename)
+            # TODO(https://github.com/m-lab/scraper/issues/7) compression
+            # Stop with this compression and decompression nonsense by deleting
+            # all code between this comment and the one that says "END TODO"
+            if filename.endswith('.gz'):
+                filename = attempt_decompression(gunzip_binary, filename)
+            # END TODO(https://github.com/m-lab/scraper/issues/7)
             filestat = os.stat(filename)
             filesize = filestat.st_size
             max_mtime = max(max_mtime, int(filestat.st_mtime))
@@ -661,7 +700,7 @@ def main(argv):  # pragma: no cover
 
     This should be called in a container, repeatedly over time.
     """
-    # TODO(pboothe) end-to-end tests
+    # TODO(https://github.com/m-lab/scraper/issues/9) end-to-end tests
     args = parse_cmdline(argv[1:])
     rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
                                           args.rsync_module)
@@ -717,8 +756,8 @@ def main(argv):  # pragma: no cover
     new_high_water_mark = max_new_high_water_mark()
     for day in find_all_days_to_upload(destination, new_high_water_mark):
         for tgz_filename, mtime in create_temporary_tarfiles(
-                args.tar_binary, destination, day, args.rsync_host,
-                args.rsync_module, args.max_uncompressed_size):
+                args.tar_binary, args.gunzip_binary, destination, day,
+                args.rsync_host, args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day, args.bucket)
             spreadsheet.update_mtime(rsync_url, mtime)
         spreadsheet.update_high_water_mark(rsync_url, day)
