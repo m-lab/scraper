@@ -26,37 +26,16 @@ import subprocess
 import tempfile
 import unittest
 
-import fasteners
 import freezegun
 import mock
 import scraper
+import run_scraper
 
 
 class TestScraper(unittest.TestCase):
 
-    def test_file_locking(self):
-        try:
-            temp_d = tempfile.mkdtemp()
-            lockfile = os.path.join(temp_d, 'testlockfile')
-            scraper.acquire_lock_or_die(lockfile)
-            self.assertTrue(os.path.exists(lockfile))
-        finally:
-            shutil.rmtree(temp_d)
-
-    @mock.patch.object(fasteners.InterProcessLock, 'acquire',
-                       return_value=False)
-    def test_file_locking_failure_causes_exit(self, _patched_acquire):
-        try:
-            temp_d = tempfile.mkdtemp()
-            lockfile = os.path.join(temp_d, 'testlockfile')
-            with self.assertRaises(SystemExit):
-                scraper.acquire_lock_or_die(lockfile)
-        finally:
-            shutil.rmtree(temp_d)
-
     def test_args(self):
         rsync_host = 'mlab1.dne0t.measurement-lab.org'
-        lockfile_dir = '/tmp/shouldnotexist/'
         rsync_module = 'ndt'
         data_dir = '/tmp/bigplaceforbackup'
         rsync_binary = '/usr/bin/rsync'
@@ -64,14 +43,13 @@ class TestScraper(unittest.TestCase):
         rsync_port = 1234
         max_uncompressed_size = 1024
         args = scraper.parse_cmdline([
-            '--rsync_host', rsync_host, '--lockfile_dir', lockfile_dir,
-            '--rsync_module', rsync_module, '--data_dir', data_dir,
-            '--rsync_binary', rsync_binary, '--rsync_port', str(rsync_port),
-            '--spreadsheet', spreadsheet, '--max_uncompressed_size',
+            '--rsync_host', rsync_host, '--rsync_module', rsync_module,
+            '--data_dir', data_dir, '--rsync_binary', rsync_binary,
+            '--rsync_port', str(rsync_port), '--spreadsheet', spreadsheet,
+            '--max_uncompressed_size',
             str(max_uncompressed_size)
         ])
         self.assertEqual(args.rsync_host, rsync_host)
-        self.assertEqual(args.lockfile_dir, lockfile_dir)
         self.assertEqual(args.rsync_module, rsync_module)
         self.assertEqual(args.data_dir, data_dir)
         self.assertEqual(args.rsync_binary, rsync_binary)
@@ -79,9 +57,8 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(args.spreadsheet, spreadsheet)
         self.assertEqual(args.max_uncompressed_size, max_uncompressed_size)
         args = scraper.parse_cmdline([
-            '--rsync_host', rsync_host, '--lockfile_dir', lockfile_dir,
-            '--rsync_module', rsync_module, '--data_dir', data_dir,
-            '--spreadsheet', spreadsheet
+            '--rsync_host', rsync_host, '--rsync_module', rsync_module,
+            '--data_dir', data_dir, '--spreadsheet', spreadsheet
         ])
         self.assertEqual(args.rsync_binary, '/usr/bin/rsync')
         self.assertEqual(args.rsync_port, 7999)
@@ -606,6 +583,13 @@ BADBADBAD
                 self.assertTrue(os.path.exists('test'))
         finally:
             shutil.rmtree(temp_d)
+
+    def test_run_scraper_has_docstring(self):
+        # run_scraper should only be tested by end-to-end tests. However, by
+        # importing it above we can at least verify that it can be parsed by
+        # the python compiler.  Then, in order to not trigger the "unused
+        # import" linter message, we should verify something about run_scraper.
+        self.assertNotEqual(run_scraper.__doc__, None)
 
 if __name__ == '__main__':  # pragma: no cover
     unittest.main()

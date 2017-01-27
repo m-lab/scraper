@@ -1,5 +1,5 @@
 #!/usr/bin/python -u
-# Copyright 2016 Scraper Authors
+# Copyright 2017 Scraper Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -32,7 +32,6 @@ spreadsheet apis, you need to use the following command line:
 """
 
 import argparse
-import atexit
 import collections
 import contextlib
 import datetime
@@ -45,29 +44,9 @@ import sys
 import tempfile
 
 import apiclient
-import fasteners
 import httplib2
 import oauth2client
 from oauth2client.contrib import gce
-
-
-def acquire_lock_or_die(lockfile):
-    """Prevents long-running downloads from being stepped on.
-
-    Create the lockfile and write the pid to that file.  If the lockfile already
-    exists, exit.
-
-    Args:
-      lockfile: the filename of the file to create
-    """
-    lock = fasteners.InterProcessLock(lockfile)
-    if not lock.acquire(blocking=False):
-        logging.critical('Lock on %s could not be acquired. Old job is likely '
-                         'still running. Aborting.', lockfile)
-        sys.exit(1)
-    with file(lockfile, 'w') as lockfile:
-        print >> lockfile, 'PID of scraper is', os.getpid()
-    return lock
 
 
 def assert_mlab_hostname(hostname):
@@ -109,13 +88,6 @@ def parse_cmdline(args):
         type=assert_mlab_hostname,
         required=True,
         help='The host to connect to over rsync')
-    parser.add_argument(
-        '--lockfile_dir',
-        metavar='DIR',
-        type=str,
-        required=True,
-        help='The the directory for lockfiles to prevent old jobs and new jobs '
-        'from running simultaneously')
     parser.add_argument(
         '--rsync_module',
         metavar='MODULE',
@@ -709,13 +681,6 @@ def main(argv):  # pragma: no cover
         format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d ' +
         rsync_url + '] %(message)s')
 
-    # Ensure that old long-lasting downloads don't get clobbered by new ones.
-    lockfile = os.path.join(
-        args.lockfile_dir,
-        '{}_{}.lock'.format(args.rsync_host, args.rsync_module))
-    lock = acquire_lock_or_die(lockfile)
-    atexit.register(lock.release)
-
     logging.info('Scraping from %s, putting the results in %s', rsync_url,
                  args.bucket)
 
@@ -728,7 +693,7 @@ def main(argv):  # pragma: no cover
                      'version=v4')
     sheets_service = apiclient.discovery.build(
         'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url,
-        credentials=creds, cache_discovery=False)
+        cache_discovery=False)
     spreadsheet = Spreadsheet(sheets_service, args.spreadsheet)
     storage_service = apiclient.discovery.build(
         'storage', 'v1', credentials=creds, cache_discovery=False)

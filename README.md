@@ -13,3 +13,9 @@ can only develop scraper code in a GCE instance.
 # Requirements
 
 The libraries required to run the project are in `requirements.txt`, the libraries required to run the tests and the commit hooks are in `test-requirements.txt`.
+
+# Building and running
+
+Try: ```bash
+sudo docker build . -t scraper && sudo docker run -it -p 9090:9090 -e RSYNC_MODULE=ndt -e RSYNC_HOST=ndt.iupui.mlab1.yyz01.measurement-lab.org scraper
+```
