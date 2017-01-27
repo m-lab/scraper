@@ -17,11 +17,12 @@
 
 """This program runs the MLab scraper in a loop.
 
-run_scraper.py is intended to be the CMD for the docker container in which the
-scraper runs.  By default, run-scraper will try to scrape the given target every
-half an hour (on average, but with exponential jitter to assure a memoryless
-distribution of runtimes).  run-scraper reports its status both via logging
-messages and a Prometheus metrics port.
+run-scraper.py is intended to be the CMD for the docker container in which the
+scraper runs.  Every argument that run-scraper does not parse is passed through
+verbatim to scraper.py.  By default, run-scraper will try to scrape the given
+target every half an hour (on average, but with exponential jitter to assure a
+memoryless distribution of runtimes).  run-scraper reports its status both via
+logging messages and a Prometheus metrics port.
 """
 
 import argparse
@@ -34,6 +35,10 @@ import googleapiclient
 import oauth2client
 import prometheus_client
 import scraper
+import subprocess
+import time
+
+import prometheus_client
 
 # Prometheus histogram buckets are web-response-sized by default, with lots of
 # sub-second buckets and very few multi-second buckets.  We need to change them
@@ -79,6 +84,31 @@ def parse_cmdline(args):
         parents=[oauth2client.tools.argparser],
         description='Repeatedly scrape a single experiment at a site, uploading'
                     'the results once enough time has passed.')
+=======
+RETURN_CODES = prometheus_client.Counter(
+    'scraper_return_code',
+    'How many times have we seen each shell return code?',
+    ['return_code'])
+
+
+# TODO(https://github.com/m-lab/scraper/issues/11) no scraper.py subprocess
+#
+# Integrate run_scraper.py and scraper.py to make the scraper a function call
+# instead of a subprocess. This will allow for finer-grained monitoring, allow
+# scraper to be better unit-tested, and basically is a better srchitecture.  To
+# do this: Integrate the argument parsing, convert scraper.main into init(),
+# download(), and upload_if_needed(), make run_scraper use those methods, and
+# then add prometheus metrics as needed to each subpart.
+
+def parse_known_args(argv):  # pragma: no cover
+    """Parse all the arguments we know how to parse.
+
+    All remaining (unparsed) arguments should be passed on to the scraper.
+    """
+    parser = argparse.ArgumentParser(
+        description='Run the scraper.py program in a loop.  All arguments '
+                    'passed in that are not specified below will be passed '
+                    'directly through to the scraper.py invocation')
     parser.add_argument(
         '--expected_wait_time',
         metavar='SECONDS',
