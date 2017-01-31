@@ -16,6 +16,7 @@ The libraries required to run the project are in `requirements.txt`, the librari
 
 # Building and running
 
-Try: ```bash
+Try: 
+```bash
 sudo docker build . -t scraper && sudo docker run -it -p 9090:9090 -e RSYNC_MODULE=ndt -e RSYNC_HOST=ndt.iupui.mlab1.yyz01.measurement-lab.org scraper
 ```
