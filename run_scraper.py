@@ -64,10 +64,6 @@ SCRAPER_SUCCESS = prometheus_client.Counter(
     'scraper_success',
     'How many times has the scraper died, how many times has it succeeded?',
     ['message'])
-RETURN_CODES = prometheus_client.Counter(
-    'scraper_return_code',
-    'How many times have we seen each shell return code?',
-    ['return_code'])
 
 
 def parse_cmdline(args):
