@@ -42,7 +42,7 @@ class TestScraper(unittest.TestCase):
         spreadsheet = '1234567890abcdef'
         rsync_port = 1234
         max_uncompressed_size = 1024
-        args = scraper.parse_cmdline([
+        args = run_scraper.parse_cmdline([
             '--rsync_host', rsync_host, '--rsync_module', rsync_module,
             '--data_dir', data_dir, '--rsync_binary', rsync_binary,
             '--rsync_port', str(rsync_port), '--spreadsheet', spreadsheet,
@@ -56,7 +56,7 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(args.rsync_port, rsync_port)
         self.assertEqual(args.spreadsheet, spreadsheet)
         self.assertEqual(args.max_uncompressed_size, max_uncompressed_size)
-        args = scraper.parse_cmdline([
+        args = run_scraper.parse_cmdline([
             '--rsync_host', rsync_host, '--rsync_module', rsync_module,
             '--data_dir', data_dir, '--spreadsheet', spreadsheet
         ])
@@ -66,7 +66,7 @@ class TestScraper(unittest.TestCase):
 
     def test_args_help(self):
         with self.assertRaises(SystemExit):
-            scraper.parse_cmdline(['-h'])
+            run_scraper.parse_cmdline(['-h'])
 
     @mock.patch.object(subprocess, 'check_output')
     def test_list_rsync_files(self, patched_subprocess):
@@ -408,18 +408,6 @@ BADBADBAD
             sheet.get_progress('barf')
 
     @mock.patch.object(scraper.Spreadsheet, 'get_data')
-    def test_get_progress_from_spreadsheet_empty_date(self, patched_get):
-        sheet = scraper.Spreadsheet(None, None)
-        with self.assertRaises(SystemExit):
-            rsync_url = u'rsync://localhost:1234/ndt'
-            patched_get.return_value = [
-                [u'dropboxrsyncaddress', u'lastsuccessfulcollection'],
-                [u'not this one', u'x2009-12-03'],
-                [rsync_url, u''],
-                [u'not this one either', u'x2009-09-09']]
-            sheet.get_progress(rsync_url)
-
-    @mock.patch.object(scraper.Spreadsheet, 'get_data')
     def test_get_progress_from_spreadsheet_bad_date(self, patched_get):
         sheet = scraper.Spreadsheet(None, None)
         with self.assertRaises(SystemExit):
@@ -430,6 +418,19 @@ BADBADBAD
                 [rsync_url, u'2009-13-10'],
                 [u'not this one either', u'x2009-09-09']]
             sheet.get_progress(rsync_url)
+
+    @mock.patch.object(scraper.Spreadsheet, 'get_data')
+    def test_get_progress_from_spreadsheet_empty_date(self, patched_get):
+        sheet = scraper.Spreadsheet(None, None)
+        rsync_url = u'rsync://localhost:1234/ndt'
+        patched_get.return_value = [
+            [u'dropboxrsyncaddress', u'lastsuccessfulcollection'],
+            [u'not this one', u'x2009-12-03'],
+            [rsync_url, u''],
+            [u'not this one either', u'x2009-09-09']]
+        default_date = datetime.date(1970, 1, 1)
+        self.assertEqual(sheet.get_progress(rsync_url, default_date),
+                         default_date)
 
     @mock.patch.object(scraper.Spreadsheet, 'get_data')
     def test_get_progress_from_spreadsheet(self, patched_get):

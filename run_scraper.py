@@ -29,10 +29,11 @@ import argparse
 import logging
 import random
 import sys
-import subprocess
 import time
 
+import oauth2client
 import prometheus_client
+import scraper
 
 # Prometheus histogram buckets are web-response-sized by default, with lots of
 # sub-second buckets and very few multi-second buckets.  We need to change them
@@ -46,39 +47,38 @@ TIME_BUCKETS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0,
 # The monitoring variables exported by the prometheus_client
 # The prometheus_client libraries confuse the linter.
 # pylint: disable=no-value-for-parameter
-RUNS = prometheus_client.Histogram(
-    'scraper_run_time_seconds',
-    'How long each run of the scraper took',
+RSYNC_RUNS = prometheus_client.Histogram(
+    'rsync_run_time_seconds',
+    'How long each rsync download took',
+    buckets=TIME_BUCKETS)
+UPLOAD_RUNS = prometheus_client.Histogram(
+    'upload_run_time_seconds',
+    'How long each GCS upload took',
     buckets=TIME_BUCKETS)
 SLEEPS = prometheus_client.Histogram(
     'scraper_sleep_time_seconds',
     'How long we slept between scraper runs (should be an exp distribution)',
     buckets=TIME_BUCKETS)
 # pylint: enable=no-value-for-parameter
-RETURN_CODES = prometheus_client.Counter(
-    'scraper_return_code',
-    'How many times have we seen each shell return code?',
-    ['return_code'])
+SCRAPER_SUCCESS = prometheus_client.Counter(
+    'scraper_success',
+    'How many times has the scraper died, how many times has it succeeded?',
+    ['message'])
 
 
-# TODO(https://github.com/m-lab/scraper/issues/11) no scraper.py subprocess
-#
-# Integrate run_scraper.py and scraper.py to make the scraper a function call
-# instead of a subprocess. This will allow for finer-grained monitoring, allow
-# scraper to be better unit-tested, and basically is a better srchitecture.  To
-# do this: Integrate the argument parsing, convert scraper.main into init(),
-# download(), and upload_if_needed(), make run_scraper use those methods, and
-# then add prometheus metrics as needed to each subpart.
+def parse_cmdline(args):
+    """Parse the commandline arguments.
 
-def parse_known_args(argv):  # pragma: no cover
-    """Parse all the arguments we know how to parse.
+    Args:
+      args: the command-line arguments, minus the name of the binary
 
-    All remaining (unparsed) arguments should be passed on to the scraper.
+    Returns:
+      the results of ArgumentParser.parse_args
     """
     parser = argparse.ArgumentParser(
-        description='Run the scraper.py program in a loop.  All arguments '
-                    'passed in that are not specified below will be passed '
-                    'directly through to the scraper.py invocation')
+        parents=[oauth2client.tools.argparser],
+        description='Repeatedly scrape a single experiment at a site, uploading'
+                    'the results once enough time has passed.')
     parser.add_argument(
         '--expected_wait_time',
         metavar='SECONDS',
@@ -95,46 +95,108 @@ def parse_known_args(argv):  # pragma: no cover
         type=int,
         default=9090,
         help='The port on which Prometheus metrics are exported.')
-    return parser.parse_known_args(argv)
+    parser.add_argument(
+        '--rsync_host',
+        metavar='HOST',
+        type=scraper.assert_mlab_hostname,
+        required=True,
+        help='The host to connect to over rsync')
+    parser.add_argument(
+        '--rsync_module',
+        metavar='MODULE',
+        type=str,
+        required=True,
+        help='The rsync module to connect to on the server')
+    parser.add_argument(
+        '--data_dir',
+        metavar='DIR',
+        type=str,
+        required=True,
+        help='The directory under which to save the data')
+    parser.add_argument(
+        '--rsync_binary',
+        metavar='RSYNC',
+        type=str,
+        default='/usr/bin/rsync',
+        required=False,
+        help='The location of the rsync binary (default is /usr/bin/rsync)')
+    parser.add_argument(
+        '--rsync_port',
+        metavar='PORT',
+        type=int,
+        default=7999,
+        required=False,
+        help='The port on which the rsync server runs (default is 7999)')
+    parser.add_argument(
+        '--spreadsheet',
+        metavar='URL',
+        type=str,
+        default='143pU25GJidW2KZ_93hgzHdqTqq22wgdxR_3tt3dvrJY',
+        help='The google doc ID of the spreadsheet used to sync download '
+        'information with the nodes.')
+    parser.add_argument(
+        '--tar_binary',
+        metavar='TAR',
+        type=str,
+        default='/bin/tar',
+        required=False,
+        help='The location of the tar binary (default is /bin/tar)')
+    parser.add_argument(
+        '--gunzip_binary',
+        metavar='GUNZIP',
+        type=str,
+        default='/bin/gunzip',
+        required=False,
+        help='The location of the gunzip binary (default is /bin/gunzip)')
+    parser.add_argument(
+        '--max_uncompressed_size',
+        metavar='SIZE',
+        type=int,
+        default=1000000000,
+        required=False,
+        help='The maximum number of bytes in an uncompressed tarfile (default '
+        'is 1,000,000,000 = 1 GB)')
+    parser.add_argument(
+        '--bucket',
+        metavar='BUCKET',
+        type=str,
+        default='mlab-storage-scraper-test',
+        help='The Google Cloud Storage bucket to upload to')
+    return parser.parse_args(args)
 
 
 def main(argv):  # pragma: no cover
     """Run scraper.py in an infinite loop."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d] '
-        '%(message)s')
-    parsed_args, scraper_args = parse_known_args(argv[1:])
-    prometheus_client.start_http_server(parsed_args.metrics_port)
-    command_line = ['/scraper.py'] + scraper_args
-    logging.info('Calling "%s" in a loop', ' '.join(command_line))
-    # We sleep before we scrape to ameliorate the thundering herd problem when
-    # the jobs are all first run.
+    args = parse_cmdline(argv[1:])
+    rsync_url, spreadsheet, destination, storage_service = scraper.init(args)
+    prometheus_client.start_http_server(args.metrics_port)
     while True:
-        # In order to prevent a thundering herd of rsync jobs, we should spread
-        # the jobs around in a memoryless way.  By choosing our inter-job sleep
+        try:
+            logging.info('Scraping %s', rsync_url)
+            with RSYNC_RUNS.time():
+                scraper.download(args.rsync_binary, rsync_url, spreadsheet,
+                                 destination)
+            with UPLOAD_RUNS.time():
+                scraper.upload_if_allowed(args, rsync_url, spreadsheet,
+                                          destination, storage_service)
+            # pylint: disable=no-member
+            SCRAPER_SUCCESS.labels(message='success').inc()
+            # pylint: enable=no-member
+        except (SystemExit, AssertionError) as error:
+            logging.error('Scrape and upload failed: %s', error.message)
+            # pylint: disable=no-member
+            SCRAPER_SUCCESS.labels(message=str(error.returncode)).inc()
+            # pylint: enable=no-member
+        # In order to prevent a thundering herd of rsync jobs, we spread the
+        # jobs around in a memoryless way.  By choosing our inter-job sleep
         # time from an exponential distribution, we ensure that the resulting
         # time distribution of jobs is Poisson, the one and only memoryless
         # distribution.  The denominator of the fraction in the code below is
         # the mean sleep time in seconds.
-        sleep_time = random.expovariate(1.0 / parsed_args.expected_wait_time)
+        sleep_time = random.expovariate(1.0 / args.expected_wait_time)
         logging.info('Sleeping for %g seconds', sleep_time)
         with SLEEPS.time():
             time.sleep(sleep_time)
-        try:
-            logging.info('Scraping')
-            with RUNS.time():
-                subprocess.check_call(command_line)
-            logging.info('Scraped (and possibly uploaded) successfully')
-            # pylint: disable=no-member
-            RETURN_CODES.labels(return_code='0').inc()
-            # pylint: enable=no-member
-        except subprocess.CalledProcessError as error:
-            logging.error('Scraper failed! command_line=%s, exit code=%d',
-                          ' '.join(command_line), error.returncode)
-            # pylint: disable=no-member
-            RETURN_CODES.labels(return_code=str(error.returncode)).inc()
-            # pylint: enable=no-member
 
 
 if __name__ == '__main__':  # pragma: no cover
