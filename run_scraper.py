@@ -18,11 +18,10 @@
 """This program runs the MLab scraper in a loop.
 
 run-scraper.py is intended to be the CMD for the docker container in which the
-scraper runs.  Every argument that run-scraper does not parse is passed through
-verbatim to scraper.py.  By default, run-scraper will try to scrape the given
-target every half an hour (on average, but with exponential jitter to assure a
-memoryless distribution of runtimes).  run-scraper reports its status both via
-logging messages and a Prometheus metrics port.
+scraper runs.  By default, run-scraper will try to scrape the given target every
+half an hour (on average, but with exponential jitter to assure a memoryless
+distribution of runtimes).  run-scraper reports its status both via logging
+messages and a Prometheus metrics port.
 """
 
 import argparse
