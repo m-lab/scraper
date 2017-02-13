@@ -610,11 +610,10 @@ def init(args):  # pragma: no cover
     discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
                      'version=v4')
     sheets_service = apiclient.discovery.build(
-        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url,
-        cache_discovery=False)
+        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url)
     spreadsheet = Spreadsheet(sheets_service, args.spreadsheet)
     storage_service = apiclient.discovery.build(
-        'storage', 'v1', credentials=creds, cache_discovery=False)
+        'storage', 'v1', credentials=creds)
 
     spreadsheet.update_last_collection(rsync_url)
     logging.getLogger().addHandler(

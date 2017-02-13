@@ -17,7 +17,7 @@
 
 """This program runs the MLab scraper in a loop.
 
-run-scraper.py is intended to be the CMD for the docker container in which the
+run_scraper.py is intended to be the CMD for the docker container in which the
 scraper runs.  By default, run-scraper will try to scrape the given target every
 half an hour (on average, but with exponential jitter to assure a memoryless
 distribution of runtimes).  run-scraper reports its status both via logging
