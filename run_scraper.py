@@ -184,7 +184,7 @@ def main(argv):  # pragma: no cover
         except (SystemExit, AssertionError) as error:
             logging.error('Scrape and upload failed: %s', error.message)
             # pylint: disable=no-member
-            SCRAPER_SUCCESS.labels(message=str(error.returncode)).inc()
+            SCRAPER_SUCCESS.labels(message=str(error.message)).inc()
             # pylint: enable=no-member
         # In order to prevent a thundering herd of rsync jobs, we spread the
         # jobs around in a memoryless way.  By choosing our inter-job sleep
