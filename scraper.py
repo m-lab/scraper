@@ -44,6 +44,7 @@ import tempfile
 
 import apiclient
 import httplib2
+
 from oauth2client.contrib import gce
 
 
@@ -407,10 +408,18 @@ def upload_tarfile(service, tgz_filename, date, bucket):  # pragma: no cover
     """
     name = '%d/%02d/%02d/%s' % (date.year, date.month, date.day, tgz_filename)
     body = {'name': name}
+    # Upload in 10 meg chunks
+    media = apiclient.http.MediaFileUpload(tgz_filename,
+                                           chunksize=10 * 1025 * 1024,
+                                           resumable=True)
     logging.info('Uploading %s to %s/%s', tgz_filename, bucket, body['name'])
     request = service.objects().insert(
-        bucket=bucket, body=body, media_body=tgz_filename)
-    request.execute()
+        bucket=bucket, body=body, media_body=media)
+    response = None
+    while response is None:
+        progress, response = request.next_chunk()
+        logging.debug('Uploaded %d%%', 100.0 * progress.progress())
+    logging.info('Upload to %s/%s complete!', bucket, body['name'])
 
 
 def remove_datafiles(directory, day):
