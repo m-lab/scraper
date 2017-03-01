@@ -8,11 +8,14 @@ RUN pip install -r requirements.txt
 # Install scraper
 ADD scraper.py /scraper.py
 RUN chmod +x /scraper.py
-ADD run-scraper.sh /run-scraper.sh
-RUN chmod +x run-scraper.sh
-## Set up health checking
-# ADD check-health.sh /check-health.sh
-# RUN chmod +x check-health.sh
-# HEALTHCHECK CMD ./check-health.sh || exit 1
+ADD run_scraper.py /run_scraper.py
+RUN chmod +x run_scraper.py
+# The monitoring port
+EXPOSE 9090
 # All daemons must be started here, along with the job they support.
-CMD /run-scraper.sh $RSYNC_HOST $RSYNC_MODULE
+CMD /run_scraper.py \
+    --rsync_host=$RSYNC_HOST \
+    --rsync_module=$RSYNC_MODULE \
+    --bucket=$GCS_BUCKET \
+    --data_dir=scraper_data \
+    --spreadsheet=$SPREADSHEET
