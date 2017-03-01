@@ -44,8 +44,16 @@ import tempfile
 
 import apiclient
 import httplib2
+import prometheus_client
 
 from oauth2client.contrib import gce
+
+
+# These are the quantities monitored by prometheus
+BYTES_UPLOADED = prometheus_client.Counter(
+    'bytes_uploaded',
+    'Total bytes uploaded to GCS',
+    ['bucket', 'rsync_host', 'experiment'])
 
 
 def assert_mlab_hostname(hostname):
@@ -372,11 +380,11 @@ def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
                                              filename_suffix)
                 try:
                     create_tarfile(tar_binary, tarfile_name, tarfile_files)
-                    logging.info('Created %s', tarfile_name)
+                    logging.info('Created local file %s', tarfile_name)
                     yield tarfile_name, max_mtime
                 finally:
-                    logging.info('removing %s', tarfile_name)
                     os.remove(tarfile_name)
+                    logging.info('Removed local file %s', tarfile_name)
                 tarfile_files = []
                 tarfile_size = 0
                 tarfile_index += 1
@@ -387,14 +395,22 @@ def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
                                          filename_suffix)
             try:
                 create_tarfile(tar_binary, tarfile_name, tarfile_files)
-                logging.info('Created %s', tarfile_name)
+                logging.info('Created local file %s', tarfile_name)
                 yield tarfile_name, max_mtime
             finally:
-                logging.info('removing %s', tarfile_name)
                 os.remove(tarfile_name)
+                logging.info('Removed local file %s', tarfile_name)
 
 
-def upload_tarfile(service, tgz_filename, date, bucket):  # pragma: no cover
+# The GCS upload mechanism loads the item to be uploaded into RAM. This means
+# that a 500 MB tarfile used that much RAM upon upload, and this caused our
+# containers to OOM on busy servers.  The chunksize below specifies how much
+# data to load into RAM, to help prevent OOM problems.
+TARFILE_UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024
+
+
+def upload_tarfile(service, tgz_filename, date, host, experiment,
+                   bucket):  # pragma: no cover
     """Uploads a tarfile to Google Cloud Storage for later processing.
 
     Puts the file into a GCS bucket. If a file of that same name already
@@ -404,22 +420,30 @@ def upload_tarfile(service, tgz_filename, date, bucket):  # pragma: no cover
       service: the service object returned from discovery
       tgz_filename: the basename of the tarfile
       date: the date for the data
+      host: the host from which the data came
+      experiment: the subdirectory of the bucket for this data
       bucket: the name of the GCS bucket
     """
-    name = '%d/%02d/%02d/%s' % (date.year, date.month, date.day, tgz_filename)
-    body = {'name': name}
-    # Upload in 10 meg chunks
+    name = '%s/%d/%02d/%02d/%s' % (experiment, date.year, date.month, date.day,
+                                   tgz_filename)
     media = apiclient.http.MediaFileUpload(tgz_filename,
-                                           chunksize=10 * 1025 * 1024,
+                                           chunksize=TARFILE_UPLOAD_CHUNK_SIZE,
                                            resumable=True)
-    logging.info('Uploading %s to %s/%s', tgz_filename, bucket, body['name'])
+    logging.info('Uploading %s to %s/%s', tgz_filename, bucket, name)
     request = service.objects().insert(
-        bucket=bucket, body=body, media_body=media)
+        bucket=bucket, name=name, media_body=media)
     response = None
     while response is None:
         progress, response = request.next_chunk()
-        logging.debug('Uploaded %d%%', 100.0 * progress.progress())
-    logging.info('Upload to %s/%s complete!', bucket, body['name'])
+        if progress:
+            logging.debug('Uploaded %d%%', 100.0 * progress.progress())
+    logging.info('Upload to %s/%s complete!', bucket, name)
+    # pylint: disable=no-member
+    BYTES_UPLOADED.labels(
+        bucket=bucket,
+        rsync_host=host,
+        experiment=experiment).inc(os.stat(tgz_filename).st_size)
+    # pylint: enable=no-member
 
 
 def remove_datafiles(directory, day):
@@ -604,7 +628,7 @@ def init(args):  # pragma: no cover
     rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
                                           args.rsync_module)
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d ' +
         rsync_url + '] %(message)s')
 
@@ -659,11 +683,14 @@ def upload_if_allowed(args, rsync_url, spreadsheet, destination,
     """
     new_high_water_mark = max_new_high_water_mark()
     for day in find_all_days_to_upload(destination, new_high_water_mark):
+        mtime = None
         for tgz_filename, mtime in create_temporary_tarfiles(
                 args.tar_binary, args.gunzip_binary, destination, day,
                 args.rsync_host, args.rsync_module, args.max_uncompressed_size):
-            upload_tarfile(storage_service, tgz_filename, day, args.bucket)
-            spreadsheet.update_mtime(rsync_url, mtime)
+            upload_tarfile(storage_service, tgz_filename, day,
+                           args.rsync_host, args.rsync_module, args.bucket)
         spreadsheet.update_high_water_mark(rsync_url, day)
+        if mtime is not None:
+            spreadsheet.update_mtime(rsync_url, mtime)
         remove_datafiles(destination, day)
     spreadsheet.update_debug_message(rsync_url, '')
