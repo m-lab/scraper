@@ -51,7 +51,7 @@ from oauth2client.contrib import gce
 
 # These are the quantities monitored by prometheus
 BYTES_UPLOADED = prometheus_client.Counter(
-    'bytes_uploaded',
+    'scraper_bytes_uploaded',
     'Total bytes uploaded to GCS',
     ['bucket', 'rsync_host', 'experiment'])
 

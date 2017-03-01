@@ -47,11 +47,11 @@ TIME_BUCKETS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0,
 # The prometheus_client libraries confuse the linter.
 # pylint: disable=no-value-for-parameter
 RSYNC_RUNS = prometheus_client.Histogram(
-    'rsync_run_time_seconds',
+    'scraper_rsync_runtime_seconds',
     'How long each rsync download took',
     buckets=TIME_BUCKETS)
 UPLOAD_RUNS = prometheus_client.Histogram(
-    'upload_run_time_seconds',
+    'scraper_gcs_upload_runtime_seconds',
     'How long each GCS upload took',
     buckets=TIME_BUCKETS)
 SLEEPS = prometheus_client.Histogram(
