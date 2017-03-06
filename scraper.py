@@ -15,10 +15,10 @@
 
 """Download all new data from an MLab node, then upload what can be uploaded.
 
-This is a single-shot program to download data from an MLab node and then upload
-it to Google Cloud Storage.  It is expected that this program will be called
-repeatedly and that there will be many such instances of this program running
-simultaneously on one or more machines.
+This is a library to download data from an MLab node and then upload it to
+Google Cloud Storage.  It is expected that the functions here will be called
+repeatedly and that there will be many instances of simultaneously on one or
+more machines.
 
 This program expects to be run on GCE and uses both cloud APIs and the Google
 Sheets API.  Sheets API access is not enabled by default for GCE, and it can't
@@ -31,7 +31,6 @@ spreadsheet apis, you need to use the following command line:
        --scopes cloud-platform,https://www.googleapis.com/auth/spreadsheets
 """
 
-import collections
 import contextlib
 import datetime
 import logging
@@ -47,6 +46,10 @@ import httplib2
 import prometheus_client
 
 from oauth2client.contrib import gce
+# pylint: disable=no-name-in-module, import-error
+# google.cloud seems to confuse pylint
+from google.cloud import datastore
+# pylint: enable=no-name-in-module, import-error
 
 
 # These are the quantities monitored by prometheus
@@ -479,8 +482,8 @@ def cell_to_date_or_die(cell_text):
         sys.exit(1)
 
 
-class Spreadsheet(object):
-    """A Spreadsheet retrieves and updates the contents of a Google sheet."""
+class Status(object):
+    """Saves and retrieves the status of an rsync endpoint from Datastore."""
 
     RSYNC_COLUMN = 'dropboxrsyncaddress'
     COLLECTION_COLUMN = 'lastsuccessfulcollection'
@@ -488,27 +491,18 @@ class Spreadsheet(object):
     LAST_COLLECTION_COLUMN = 'lastcollectionattempt'
     MTIME_COLUMN = 'maxrawfilemtimearchived'
 
-    def __init__(self, service, spreadsheet,
-                 worksheet='Drop box status (auto updated)',
-                 default_range='A:F'):
-        self._service = service
-        self._spreadsheet = spreadsheet
-        self._worksheet = worksheet
-        self._default_range = default_range
+    def __init__(self, client, rsync_url):
+        self._client = client
+        self._rsync_url = rsync_url
 
-    def get_data(self, worksheet_range=None):  # pragma: no cover
+    def get_data(self):  # pragma: no cover
         """Retrieves data from a spreadsheet.
 
         A separate function so that it can be mocked for testing purposes.
         """
-        if worksheet_range is None:
-            worksheet_range = self._default_range
-        sheet_range = self._worksheet + '!' + worksheet_range
-        result = self._service.spreadsheets().values().get(
-            spreadsheetId=self._spreadsheet, range=sheet_range).execute()
-        return result.get('values', [])
+        return self._client.get(self._client.key(rsync_url=self._rsync_url))
 
-    def get_progress(self, rsync_url, default_date=datetime.date(2009, 1, 1)):
+    def get_progress(self, default_date=datetime.date(2009, 1, 1)):
         """Returns the most recent date from which we have all the data.
 
         Downloads everything in the spreadsheet, then finds the right row, and
@@ -516,105 +510,68 @@ class Spreadsheet(object):
         cell.
 
         Args:
-          rsync_url: the url to download from (determines the row)
           default_date: the time to return if the row does not exist
         """
-        values = self.get_data()
-        if not values:
-            logging.critical('No data found in the given spreadsheet')
-            sys.exit(1)
-        header = values[0]
-        rsync_index = header.index(self.RSYNC_COLUMN)
-        date_index = header.index(self.COLLECTION_COLUMN)
-        for row in values[1:]:
-            if row[rsync_index] == rsync_url:
-                date_str = row[date_index]
-                if not date_str or not date_str.strip():
-                    return default_date
-                logging.info('Old high water mark was %s', date_str)
-                return cell_to_date_or_die(date_str)
-        logging.warning('No row found for %s', rsync_url)
-        return default_date
+        value = self.get_data()
+        if not value:
+            logging.info('No data found in the datastore')
+            return default_date
+        elif (Status.COLLECTION_COLUMN not in value or
+              not value[Status.COLLECTION_COLUMN]):
+            logging.info('Data in the datastore had no %s',
+                         Status.COLLECTION_COLUMN)
+            return default_date
+        else:
+            return cell_to_date_or_die(value[Status.COLLECTION_COLUMN])
 
-    def update_data(self, rsync_url, column, value):  # pragma: no cover
-        """Updates a single cell on the spreadsheet.
+    def update_data(self, entry_key, entry_value):  # pragma: no cover
+        """Updates a datastore value.
 
-        The row and column of the cell are determined by the rsync_url and
-        column values, respectively.  If no such row exists, then one will be
-        created.
+        If no value for the key exists, then one will be created.
 
         Args:
-          rsync_url: determines the row
-          column: determines the column (must be one of the header values)
-          value: the new value to write to the cell
+          entry_key: must be one of the header values
+          entry_value: the new value to write to the datastore entry
         """
-        values = self.get_data()
-        if not values:
-            logging.critical('No data found in the given spreadsheet')
-            sys.exit(1)
-        header = values[0]
-        rsync_index = header.index(self.RSYNC_COLUMN)
-        column_index = header.index(column)
-        assert column_index <= 26, 'Too many columns'
-        for row_index in range(1, len(values)):
-            if values[row_index][rsync_index] == rsync_url:
-                # Convert zero-based index stored in row_index to one-based
-                # spreadsheet row index.
-                cell_id = chr(ord('A') + column_index) + str(row_index + 1)
-                update_range = self._worksheet + '!' + cell_id
-                values = [[value]]
-                body = {'values': values}
-                logging.info('About to update %s (%s, %s) to %s', cell_id,
-                             rsync_url, column, values[0][0])
-                response = self._service.spreadsheets().values().update(
-                    spreadsheetId=self._spreadsheet, range=update_range,
-                    body=body, valueInputOption='RAW').execute()
-                assert response['updatedRows'], 'Bad update ' + str(response)
-                return
-        # Append a new row.
-        data = collections.defaultdict(str)
-        data[self.RSYNC_COLUMN] = rsync_url
-        data[column] = value
-        new_row = [data[x] for x in header]
-        body = {'values': [new_row]}
-        range_name = self._worksheet + '!' + self._default_range
-        response = self._service.spreadsheets().values().append(
-            spreadsheetId=self._spreadsheet, range=range_name, body=body,
-            valueInputOption='RAW').execute()
-        assert response['updates']['updatedRows'], 'Bad append ' + str(response)
+        value = self.get_data()
+        if not value:
+            logging.info('Key %s has no value. Making a new one.',
+                         self._rsync_url)
+            value = self._client.entity()
+        value[entry_key] = entry_value
+        self._client.put(value)
 
-    def update_high_water_mark(self, rsync_url, date):
+    def update_high_water_mark(self, date):
         """Updates the date before which it is safe to delete data."""
         date_str = 'x%d-%02d-%02d' % (date.year, date.month, date.day)
-        self.update_data(rsync_url, self.COLLECTION_COLUMN, date_str)
+        self.update_data(self.COLLECTION_COLUMN, date_str)
 
-    def update_debug_message(self, rsync_url, message):
+    def update_debug_message(self, message):
         """Updates the debug message on the spreadsheet."""
-        self.update_data(rsync_url, self.DEBUG_MESSAGE_COLUMN, message)
+        self.update_data(self.DEBUG_MESSAGE_COLUMN, message)
 
-    def update_last_collection(self, rsync_url):
+    def update_last_collection(self):
         """Updates the last collection time on the spreadsheet."""
         text = datetime.datetime.utcnow().strftime('x%Y-%02m-%02d-%02H:%02M')
-        self.update_data(rsync_url, self.LAST_COLLECTION_COLUMN, text)
+        self.update_data(self.LAST_COLLECTION_COLUMN, text)
 
-    def update_mtime(self, rsync_url, mtime):
+    def update_mtime(self, mtime):
         """Updates the mtime column on the spreadsheet."""
-        self.update_data(rsync_url, self.MTIME_COLUMN, mtime)
+        self.update_data(self.MTIME_COLUMN, mtime)
 
 
-class SpreadsheetLogHandler(logging.Handler):
+class StatusLogHandler(logging.Handler):
     """Handles error log messages by writing them to the shared spreadsheet."""
 
-    def __init__(self, rsync_url, spreadsheet):
+    def __init__(self, status_storage):
         logging.Handler.__init__(self, level=logging.ERROR)
         self.setFormatter(
             logging.Formatter('[%(asctime)s %(levelname)s '
                               '%(filename)s:%(lineno)d] %(message)s'))
-        self._rsync_url = rsync_url
-        self._sheet = spreadsheet
+        self._status_storage = status_storage
 
     def handle(self, record):
-        self._sheet.update_debug_message(self._rsync_url, self.format(record))
+        self._status_storage.update_debug_message(self.format(record))
 
     def emit(self, _record):  # pragma: no cover
         """Abstract in the base class, overwritten to keep the linter happy."""
@@ -643,40 +600,36 @@ def init(args):  # pragma: no cover
 
     # Set up the Sheets and Cloud Storage APIs.
     http = creds.authorize(httplib2.Http())
-    discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
-                     'version=v4')
-    sheets_service = apiclient.discovery.build(
-        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url)
-    spreadsheet = Spreadsheet(sheets_service, args.spreadsheet)
+    datastore_service = datastore.Client(http=http,
+                                         namespace=args.datastore_namespace)
+    status = Status(datastore_service, rsync_url)
     storage_service = apiclient.discovery.build(
         'storage', 'v1', credentials=creds)
 
-    spreadsheet.update_last_collection(rsync_url)
-    logging.getLogger().addHandler(
-        SpreadsheetLogHandler(rsync_url, spreadsheet))
+    status.update_last_collection()
+    logging.getLogger().addHandler(StatusLogHandler(status))
 
     # If the destination directory does not exist, make it exist.
     destination = os.path.join(args.data_dir, args.rsync_host,
                                args.rsync_module)
     if not os.path.isdir(destination):
         os.makedirs(destination)
-    return (rsync_url, spreadsheet, destination, storage_service)
+    return (rsync_url, status, destination, storage_service)
 
 
-def download(rsync_binary, rsync_url, spreadsheet,
-             destination):  # pragma: no cover
+def download(rsync_binary, rsync_url, status, destination):  # pragma: no cover
     """Rsync download all files that are new enough.
 
     Find the current progress level from the spreadsheet, then get the file list
     and download the files from the server.
     """
-    progress_level = spreadsheet.get_progress(rsync_url)
+    progress_level = status.get_progress()
     all_files = list_rsync_files(rsync_binary, rsync_url)
     newer_files = remove_older_files(progress_level, all_files)
     download_files(rsync_binary, rsync_url, newer_files, destination)
 
 
-def upload_if_allowed(args, rsync_url, spreadsheet, destination,
+def upload_if_allowed(args, status, destination,
                       storage_service):  # pragma: no cover
     """If enough time has passed, upload old data to GCS.
 
@@ -696,4 +649,4 @@ def upload_if_allowed(args, rsync_url, spreadsheet, destination,
         if max_mtime is not None:
             spreadsheet.update_mtime(rsync_url, max_mtime)
         remove_datafiles(destination, day)
-    spreadsheet.update_debug_message(rsync_url, '')
+    status.update_debug_message('')

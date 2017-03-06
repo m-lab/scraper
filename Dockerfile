@@ -18,4 +18,4 @@ CMD /run_scraper.py \
     --rsync_module=$RSYNC_MODULE \
     --bucket=$GCS_BUCKET \
     --data_dir=scraper_data \
-    --spreadsheet=$SPREADSHEET
+    --datastore_namespace=$DATASTORE_NAMESPACE
