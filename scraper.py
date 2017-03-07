@@ -490,17 +490,23 @@ class Status(object):
     DEBUG_MESSAGE_COLUMN = 'errorsincelastsuccessful'
     LAST_COLLECTION_COLUMN = 'lastcollectionattempt'
     MTIME_COLUMN = 'maxrawfilemtimearchived'
+    NAMESPACE = ''
 
     def __init__(self, client, rsync_url):
         self._client = client
         self._rsync_url = rsync_url
+        self._key = None
+        self._entity = None
 
     def get_data(self):  # pragma: no cover
         """Retrieves data from a spreadsheet.
 
         A separate function so that it can be mocked for testing purposes.
         """
-        return self._client.get(self._client.key(rsync_url=self._rsync_url))
+        if self._key is None:
+            self._key = self._client.key('namespace', Status.NAMESPACE,
+                                         'rsync_url', self._rsync_url)
+        return self._client.get(self._key)
 
     def get_progress(self, default_date=datetime.date(2009, 1, 1)):
         """Returns the most recent date from which we have all the data.
@@ -537,7 +543,7 @@ class Status(object):
         if not value:
             logging.info('Key %s has no value. Making a new one.',
                          self._rsync_url)
-            value = self._client.entity()
+            value = datastore.entity.Entity(key=self._key)
         value[entry_key] = entry_value
         self._client.put(value)
 
@@ -599,9 +605,8 @@ def init(args):  # pragma: no cover
     creds = gce.AppAssertionCredentials()
 
     # Set up the Sheets and Cloud Storage APIs.
-    http = creds.authorize(httplib2.Http())
-    datastore_service = datastore.Client(http=http,
-                                         namespace=args.datastore_namespace)
+    Status.NAMESPACE = args.datastore_namespace
+    datastore_service = datastore.Client()
     status = Status(datastore_service, rsync_url)
     storage_service = apiclient.discovery.build(
         'storage', 'v1', credentials=creds)

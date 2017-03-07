@@ -1,7 +1,8 @@
 FROM google/cloud-sdk
 MAINTAINER Peter Boothe <pboothe@google.com>
 # Install all the standard packages we need
-RUN apt-get update && apt-get install -y python-pip rsync tar python-dev
+RUN apt-get update && apt-get install -y rsync tar python-dev python-setuptools
+RUN easy_install pip
 # Install all the python requirements
 ADD requirements.txt /requirements.txt
 RUN pip install -r requirements.txt
