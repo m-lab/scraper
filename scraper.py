@@ -1,5 +1,5 @@
 #!/usr/bin/python -u
-# Copyright 2016 Scraper Authors
+# Copyright 2017 Scraper Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,8 +31,6 @@ spreadsheet apis, you need to use the following command line:
        --scopes cloud-platform,https://www.googleapis.com/auth/spreadsheets
 """
 
-import argparse
-import atexit
 import collections
 import contextlib
 import datetime
@@ -45,29 +43,17 @@ import sys
 import tempfile
 
 import apiclient
-import fasteners
 import httplib2
-import oauth2client
+import prometheus_client
+
 from oauth2client.contrib import gce
 
 
-def acquire_lock_or_die(lockfile):
-    """Prevents long-running downloads from being stepped on.
-
-    Create the lockfile and write the pid to that file.  If the lockfile already
-    exists, exit.
-
-    Args:
-      lockfile: the filename of the file to create
-    """
-    lock = fasteners.InterProcessLock(lockfile)
-    if not lock.acquire(blocking=False):
-        logging.critical('Lock on %s could not be acquired. Old job is likely '
-                         'still running. Aborting.', lockfile)
-        sys.exit(1)
-    with file(lockfile, 'w') as lockfile:
-        print >> lockfile, 'PID of scraper is', os.getpid()
-    return lock
+# These are the quantities monitored by prometheus
+BYTES_UPLOADED = prometheus_client.Counter(
+    'scraper_bytes_uploaded',
+    'Total bytes uploaded to GCS',
+    ['bucket', 'rsync_host', 'experiment'])
 
 
 def assert_mlab_hostname(hostname):
@@ -88,96 +74,6 @@ def assert_mlab_hostname(hostname):
         r'^(.*\.)?mlab[1-9]\.[a-z]{3}[0-9][0-9t]\.measurement-lab\.org$',
         hostname), 'Bad hostname: "%s"' % hostname
     return hostname
-
-
-def parse_cmdline(args):
-    """Parse the commandline arguments.
-
-    Args:
-      args: the command-line arguments, minus the name of the binary
-
-    Returns:
-      the results of ArgumentParser.parse_args
-    """
-    parser = argparse.ArgumentParser(
-        parents=[oauth2client.tools.argparser],
-        description='Scrape a single experiment at a site, upload the results '
-        'if enough time has passed.')
-    parser.add_argument(
-        '--rsync_host',
-        metavar='HOST',
-        type=assert_mlab_hostname,
-        required=True,
-        help='The host to connect to over rsync')
-    parser.add_argument(
-        '--lockfile_dir',
-        metavar='DIR',
-        type=str,
-        required=True,
-        help='The the directory for lockfiles to prevent old jobs and new jobs '
-        'from running simultaneously')
-    parser.add_argument(
-        '--rsync_module',
-        metavar='MODULE',
-        type=str,
-        required=True,
-        help='The rsync module to connect to on the server')
-    parser.add_argument(
-        '--data_dir',
-        metavar='DIR',
-        type=str,
-        required=True,
-        help='The directory under which to save the data')
-    parser.add_argument(
-        '--rsync_binary',
-        metavar='RSYNC',
-        type=str,
-        default='/usr/bin/rsync',
-        required=False,
-        help='The location of the rsync binary (default is /usr/bin/rsync)')
-    parser.add_argument(
-        '--rsync_port',
-        metavar='PORT',
-        type=int,
-        default=7999,
-        required=False,
-        help='The port on which the rsync server runs (default is 7999)')
-    parser.add_argument(
-        '--spreadsheet',
-        metavar='URL',
-        type=str,
-        default='143pU25GJidW2KZ_93hgzHdqTqq22wgdxR_3tt3dvrJY',
-        help='The google doc ID of the spreadsheet used to sync download '
-        'information with the nodes.')
-    parser.add_argument(
-        '--tar_binary',
-        metavar='TAR',
-        type=str,
-        default='/bin/tar',
-        required=False,
-        help='The location of the tar binary (default is /bin/tar)')
-    parser.add_argument(
-        '--gunzip_binary',
-        metavar='GUNZIP',
-        type=str,
-        default='/bin/gunzip',
-        required=False,
-        help='The location of the gunzip binary (default is /bin/gunzip)')
-    parser.add_argument(
-        '--max_uncompressed_size',
-        metavar='SIZE',
-        type=int,
-        default=1000000000,
-        required=False,
-        help='The maximum number of bytes in an uncompressed tarfile (default '
-        'is 1,000,000,000 = 1 GB)')
-    parser.add_argument(
-        '--bucket',
-        metavar='BUCKET',
-        type=str,
-        default='mlab-storage-scraper-test',
-        help='The Google Cloud Storage bucket to upload to')
-    return parser.parse_args(args)
 
 
 # Use IPv4, compression, and limit total bandwidth usage to 10 Mbps
@@ -484,11 +380,11 @@ def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
                                              filename_suffix)
                 try:
                     create_tarfile(tar_binary, tarfile_name, tarfile_files)
-                    logging.info('Created %s', tarfile_name)
+                    logging.info('Created local file %s', tarfile_name)
                     yield tarfile_name, max_mtime
                 finally:
-                    logging.info('removing %s', tarfile_name)
                     os.remove(tarfile_name)
+                    logging.info('Removed local file %s', tarfile_name)
                 tarfile_files = []
                 tarfile_size = 0
                 tarfile_index += 1
@@ -499,31 +395,58 @@ def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
                                          filename_suffix)
             try:
                 create_tarfile(tar_binary, tarfile_name, tarfile_files)
-                logging.info('Created %s', tarfile_name)
+                logging.info('Created local file %s', tarfile_name)
                 yield tarfile_name, max_mtime
             finally:
-                logging.info('removing %s', tarfile_name)
                 os.remove(tarfile_name)
+                logging.info('Removed local file %s', tarfile_name)
 
 
-def upload_tarfile(service, tgz_filename, date, bucket):  # pragma: no cover
+# The GCS upload mechanism loads the item to be uploaded into RAM. This means
+# that a 500 MB tarfile used that much RAM upon upload, and this caused our
+# containers to OOM on busy servers.  The chunksize below specifies how much
+# data to load into RAM, to help prevent OOM problems.
+TARFILE_UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024
+
+
+def upload_tarfile(service, tgz_filename, date, host, experiment,
+                   bucket):  # pragma: no cover
     """Uploads a tarfile to Google Cloud Storage for later processing.
 
     Puts the file into a GCS bucket. If a file of that same name already
-    exists, the file is overwritten.
+    exists, the file is overwritten.  If the upload fails, HttpError is raised.
 
     Args:
       service: the service object returned from discovery
       tgz_filename: the basename of the tarfile
       date: the date for the data
+      host: the host from which the data came
+      experiment: the subdirectory of the bucket for this data
       bucket: the name of the GCS bucket
+
+    Raises:
+      googleapiclient.errors.HttpError on upload failure
     """
-    name = '%d/%02d/%02d/%s' % (date.year, date.month, date.day, tgz_filename)
-    body = {'name': name}
-    logging.info('Uploading %s to %s/%s', tgz_filename, bucket, body['name'])
+    name = '%s/%d/%02d/%02d/%s' % (experiment, date.year, date.month, date.day,
+                                   tgz_filename)
+    media = apiclient.http.MediaFileUpload(tgz_filename,
+                                           chunksize=TARFILE_UPLOAD_CHUNK_SIZE,
+                                           resumable=True)
+    logging.info('Uploading %s to %s/%s', tgz_filename, bucket, name)
     request = service.objects().insert(
-        bucket=bucket, body=body, media_body=tgz_filename)
-    request.execute()
+        bucket=bucket, name=name, media_body=media)
+    response = None
+    while response is None:
+        progress, response = request.next_chunk()
+        if progress:
+            logging.debug('Uploaded %d%%', 100.0 * progress.progress())
+    logging.info('Upload to %s/%s complete!', bucket, name)
+    # pylint: disable=no-member
+    BYTES_UPLOADED.labels(
+        bucket=bucket,
+        rsync_host=host,
+        experiment=experiment).inc(os.stat(tgz_filename).st_size)
+    # pylint: enable=no-member
 
 
 def remove_datafiles(directory, day):
@@ -606,6 +529,8 @@ class Spreadsheet(object):
         for row in values[1:]:
             if row[rsync_index] == rsync_url:
                 date_str = row[date_index]
+                if not date_str or not date_str.strip():
+                    return default_date
                 logging.info('Old high water mark was %s', date_str)
                 return cell_to_date_or_die(date_str)
         logging.warning('No row found for %s', rsync_url)
@@ -695,26 +620,20 @@ class SpreadsheetLogHandler(logging.Handler):
         """Abstract in the base class, overwritten to keep the linter happy."""
 
 
-def main(argv):  # pragma: no cover
-    """Run the download and upload from end-to-end.
+def init(args):  # pragma: no cover
+    """Initialize the scraper library.
 
-    This should be called in a container, repeatedly over time.
+    The discovery interface means that the contents of some libraries is
+    determined at runtime.  Also, applications need to be authorized to use the
+    necessary services.  This performs both library initialization as well as
+    application authorization.
     """
-    # TODO(https://github.com/m-lab/scraper/issues/9) end-to-end tests
-    args = parse_cmdline(argv[1:])
     rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
                                           args.rsync_module)
     logging.basicConfig(
-        level=logging.INFO,
+        level=logging.DEBUG,
         format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d ' +
         rsync_url + '] %(message)s')
-
-    # Ensure that old long-lasting downloads don't get clobbered by new ones.
-    lockfile = os.path.join(
-        args.lockfile_dir,
-        '{}_{}.lock'.format(args.rsync_host, args.rsync_module))
-    lock = acquire_lock_or_die(lockfile)
-    atexit.register(lock.release)
 
     logging.info('Scraping from %s, putting the results in %s', rsync_url,
                  args.bucket)
@@ -727,42 +646,54 @@ def main(argv):  # pragma: no cover
     discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
                      'version=v4')
     sheets_service = apiclient.discovery.build(
-        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url,
-        credentials=creds, cache_discovery=False)
+        'sheets', 'v4', http=http, discoveryServiceUrl=discovery_url)
     spreadsheet = Spreadsheet(sheets_service, args.spreadsheet)
     storage_service = apiclient.discovery.build(
-        'storage', 'v1', credentials=creds, cache_discovery=False)
+        'storage', 'v1', credentials=creds)
 
     spreadsheet.update_last_collection(rsync_url)
     logging.getLogger().addHandler(
         SpreadsheetLogHandler(rsync_url, spreadsheet))
 
-    # Find the current progress level from the spreadsheet.
-    progress_level = spreadsheet.get_progress(rsync_url)
     # If the destination directory does not exist, make it exist.
     destination = os.path.join(args.data_dir, args.rsync_host,
                                args.rsync_module)
     if not os.path.isdir(destination):
         os.makedirs(destination)
+    return (rsync_url, spreadsheet, destination, storage_service)
 
-    # Get the file list and then the files from the server.
-    all_files = list_rsync_files(args.rsync_binary, rsync_url)
+
+def download(rsync_binary, rsync_url, spreadsheet,
+             destination):  # pragma: no cover
+    """Rsync download all files that are new enough.
+
+    Find the current progress level from the spreadsheet, then get the file list
+    and download the files from the server.
+    """
+    progress_level = spreadsheet.get_progress(rsync_url)
+    all_files = list_rsync_files(rsync_binary, rsync_url)
     newer_files = remove_older_files(progress_level, all_files)
-    download_files(args.rsync_binary, rsync_url, newer_files, destination)
+    download_files(rsync_binary, rsync_url, newer_files, destination)
 
-    # Tar up what we have for each un-uploaded day that is sufficiently in the
-    # past (up to and including the new high water mark), upload what we have,
-    # and delete the local copies of all successfully-uploaded data.
+
+def upload_if_allowed(args, rsync_url, spreadsheet, destination,
+                      storage_service):  # pragma: no cover
+    """If enough time has passed, upload old data to GCS.
+
+    Tar up what we have for each un-uploaded day that is sufficiently in the
+    past (up to and including the new high water mark), upload what we have, and
+    delete the local copies of all successfully-uploaded data.
+    """
     new_high_water_mark = max_new_high_water_mark()
     for day in find_all_days_to_upload(destination, new_high_water_mark):
-        for tgz_filename, mtime in create_temporary_tarfiles(
+        max_mtime = None
+        for tgz_filename, max_mtime in create_temporary_tarfiles(
                 args.tar_binary, args.gunzip_binary, destination, day,
                 args.rsync_host, args.rsync_module, args.max_uncompressed_size):
-            upload_tarfile(storage_service, tgz_filename, day, args.bucket)
-            spreadsheet.update_mtime(rsync_url, mtime)
+            upload_tarfile(storage_service, tgz_filename, day,
+                           args.rsync_host, args.rsync_module, args.bucket)
         spreadsheet.update_high_water_mark(rsync_url, day)
+        if max_mtime is not None:
+            spreadsheet.update_mtime(rsync_url, max_mtime)
         remove_datafiles(destination, day)
     spreadsheet.update_debug_message(rsync_url, '')
-
-if __name__ == '__main__':  # pragma: no cover
-    main(sys.argv)

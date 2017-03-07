@@ -1,2 +1,3 @@
 fasteners
 google-api-python-client
+prometheus_client

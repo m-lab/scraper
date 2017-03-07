@@ -26,62 +26,39 @@ import subprocess
 import tempfile
 import unittest
 
-import fasteners
 import freezegun
 import mock
 import scraper
+import run_scraper
 
 
 class TestScraper(unittest.TestCase):
 
-    def test_file_locking(self):
-        try:
-            temp_d = tempfile.mkdtemp()
-            lockfile = os.path.join(temp_d, 'testlockfile')
-            scraper.acquire_lock_or_die(lockfile)
-            self.assertTrue(os.path.exists(lockfile))
-        finally:
-            shutil.rmtree(temp_d)
-
-    @mock.patch.object(fasteners.InterProcessLock, 'acquire',
-                       return_value=False)
-    def test_file_locking_failure_causes_exit(self, _patched_acquire):
-        try:
-            temp_d = tempfile.mkdtemp()
-            lockfile = os.path.join(temp_d, 'testlockfile')
-            with self.assertRaises(SystemExit):
-                scraper.acquire_lock_or_die(lockfile)
-        finally:
-            shutil.rmtree(temp_d)
-
     def test_args(self):
         rsync_host = 'mlab1.dne0t.measurement-lab.org'
-        lockfile_dir = '/tmp/shouldnotexist/'
         rsync_module = 'ndt'
         data_dir = '/tmp/bigplaceforbackup'
         rsync_binary = '/usr/bin/rsync'
         spreadsheet = '1234567890abcdef'
         rsync_port = 1234
         max_uncompressed_size = 1024
-        args = scraper.parse_cmdline([
-            '--rsync_host', rsync_host, '--lockfile_dir', lockfile_dir,
-            '--rsync_module', rsync_module, '--data_dir', data_dir,
-            '--rsync_binary', rsync_binary, '--rsync_port', str(rsync_port),
-            '--spreadsheet', spreadsheet, '--max_uncompressed_size',
+        args = run_scraper.parse_cmdline([
+            '--rsync_host', rsync_host, '--rsync_module', rsync_module,
+            '--data_dir', data_dir, '--rsync_binary', rsync_binary,
+            '--rsync_port', str(rsync_port), '--spreadsheet', spreadsheet,
+            '--max_uncompressed_size',
             str(max_uncompressed_size)
         ])
         self.assertEqual(args.rsync_host, rsync_host)
-        self.assertEqual(args.lockfile_dir, lockfile_dir)
         self.assertEqual(args.rsync_module, rsync_module)
         self.assertEqual(args.data_dir, data_dir)
         self.assertEqual(args.rsync_binary, rsync_binary)
         self.assertEqual(args.rsync_port, rsync_port)
         self.assertEqual(args.spreadsheet, spreadsheet)
         self.assertEqual(args.max_uncompressed_size, max_uncompressed_size)
-        args = scraper.parse_cmdline([
-            '--rsync_host', rsync_host, '--lockfile_dir', lockfile_dir,
-            '--rsync_module', rsync_module, '--data_dir', data_dir,
-            '--spreadsheet', spreadsheet
+        args = run_scraper.parse_cmdline([
+            '--rsync_host', rsync_host, '--rsync_module', rsync_module,
+            '--data_dir', data_dir, '--spreadsheet', spreadsheet
         ])
         self.assertEqual(args.rsync_binary, '/usr/bin/rsync')
         self.assertEqual(args.rsync_port, 7999)
@@ -89,7 +66,7 @@ class TestScraper(unittest.TestCase):
 
     def test_args_help(self):
         with self.assertRaises(SystemExit):
-            scraper.parse_cmdline(['-h'])
+            run_scraper.parse_cmdline(['-h'])
 
     @mock.patch.object(subprocess, 'check_output')
     def test_list_rsync_files(self, patched_subprocess):
@@ -431,18 +408,6 @@ BADBADBAD
             sheet.get_progress('barf')
 
     @mock.patch.object(scraper.Spreadsheet, 'get_data')
-    def test_get_progress_from_spreadsheet_empty_date(self, patched_get):
-        sheet = scraper.Spreadsheet(None, None)
-        with self.assertRaises(SystemExit):
-            rsync_url = u'rsync://localhost:1234/ndt'
-            patched_get.return_value = [
-                [u'dropboxrsyncaddress', u'lastsuccessfulcollection'],
-                [u'not this one', u'x2009-12-03'],
-                [rsync_url, u''],
-                [u'not this one either', u'x2009-09-09']]
-            sheet.get_progress(rsync_url)
-
-    @mock.patch.object(scraper.Spreadsheet, 'get_data')
     def test_get_progress_from_spreadsheet_bad_date(self, patched_get):
         sheet = scraper.Spreadsheet(None, None)
         with self.assertRaises(SystemExit):
@@ -453,6 +418,19 @@ BADBADBAD
                 [rsync_url, u'2009-13-10'],
                 [u'not this one either', u'x2009-09-09']]
             sheet.get_progress(rsync_url)
+
+    @mock.patch.object(scraper.Spreadsheet, 'get_data')
+    def test_get_progress_from_spreadsheet_empty_date(self, patched_get):
+        sheet = scraper.Spreadsheet(None, None)
+        rsync_url = u'rsync://localhost:1234/ndt'
+        patched_get.return_value = [
+            [u'dropboxrsyncaddress', u'lastsuccessfulcollection'],
+            [u'not this one', u'x2009-12-03'],
+            [rsync_url, u''],
+            [u'not this one either', u'x2009-09-09']]
+        default_date = datetime.date(1970, 1, 1)
+        self.assertEqual(sheet.get_progress(rsync_url, default_date),
+                         default_date)
 
     @mock.patch.object(scraper.Spreadsheet, 'get_data')
     def test_get_progress_from_spreadsheet(self, patched_get):
@@ -606,6 +584,13 @@ BADBADBAD
                 self.assertTrue(os.path.exists('test'))
         finally:
             shutil.rmtree(temp_d)
+
+    def test_run_scraper_has_docstring(self):
+        # run_scraper should only be tested by end-to-end tests. However, by
+        # importing it above we can at least verify that it can be parsed by
+        # the python compiler.  Then, in order to not trigger the "unused
+        # import" linter message, we should verify something about run_scraper.
+        self.assertIsNotNone(run_scraper.__doc__)
 
 if __name__ == '__main__':  # pragma: no cover
     unittest.main()
