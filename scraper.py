@@ -414,7 +414,7 @@ def upload_tarfile(service, tgz_filename, date, host, experiment,
     """Uploads a tarfile to Google Cloud Storage for later processing.
 
     Puts the file into a GCS bucket. If a file of that same name already
-    exists, the file is overwritten.
+    exists, the file is overwritten.  If the upload fails, HttpError is raised.
 
     Args:
       service: the service object returned from discovery
@@ -423,6 +423,9 @@ def upload_tarfile(service, tgz_filename, date, host, experiment,
       host: the host from which the data came
       experiment: the subdirectory of the bucket for this data
       bucket: the name of the GCS bucket
+
+    Raises:
+      HttpError
     """
     name = '%s/%d/%02d/%02d/%s' % (experiment, date.year, date.month, date.day,
                                    tgz_filename)
@@ -683,14 +686,14 @@ def upload_if_allowed(args, rsync_url, spreadsheet, destination,
     """
     new_high_water_mark = max_new_high_water_mark()
     for day in find_all_days_to_upload(destination, new_high_water_mark):
-        mtime = None
-        for tgz_filename, mtime in create_temporary_tarfiles(
+        max_mtime = None
+        for tgz_filename, max_mtime in create_temporary_tarfiles(
                 args.tar_binary, args.gunzip_binary, destination, day,
                 args.rsync_host, args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_host, args.rsync_module, args.bucket)
         spreadsheet.update_high_water_mark(rsync_url, day)
-        if mtime is not None:
-            spreadsheet.update_mtime(rsync_url, mtime)
+        if max_mtime is not None:
+            spreadsheet.update_mtime(rsync_url, max_mtime)
         remove_datafiles(destination, day)
     spreadsheet.update_debug_message(rsync_url, '')

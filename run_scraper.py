@@ -30,6 +30,7 @@ import random
 import sys
 import time
 
+import googleapiclient
 import oauth2client
 import prometheus_client
 import scraper
@@ -181,7 +182,8 @@ def main(argv):  # pragma: no cover
             # pylint: disable=no-member
             SCRAPER_SUCCESS.labels(message='success').inc()
             # pylint: enable=no-member
-        except (SystemExit, AssertionError) as error:
+        except (SystemExit, AssertionError,
+                googleapiclient.errors.HttpError) as error:
             logging.error('Scrape and upload failed: %s', error.message)
             # pylint: disable=no-member
             SCRAPER_SUCCESS.labels(message=str(error.message)).inc()

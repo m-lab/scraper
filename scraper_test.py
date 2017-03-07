@@ -590,7 +590,7 @@ BADBADBAD
         # importing it above we can at least verify that it can be parsed by
         # the python compiler.  Then, in order to not trigger the "unused
         # import" linter message, we should verify something about run_scraper.
-        self.assertNotEqual(run_scraper.__doc__, None)
+        self.assertIsNotNone(run_scraper.__doc__)
 
 if __name__ == '__main__':  # pragma: no cover
     unittest.main()
