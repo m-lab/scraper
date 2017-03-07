@@ -425,7 +425,7 @@ def upload_tarfile(service, tgz_filename, date, host, experiment,
       bucket: the name of the GCS bucket
 
     Raises:
-      HttpError
+      googleapiclient.errors.HttpError on upload failure
     """
     name = '%s/%d/%02d/%02d/%s' % (experiment, date.year, date.month, date.day,
                                    tgz_filename)
