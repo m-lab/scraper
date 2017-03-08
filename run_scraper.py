@@ -31,6 +31,7 @@ import random
 import sys
 import time
 
+import googleapiclient
 import oauth2client
 import prometheus_client
 import scraper

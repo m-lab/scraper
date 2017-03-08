@@ -42,7 +42,6 @@ import sys
 import tempfile
 
 import apiclient
-import httplib2
 import prometheus_client
 
 from oauth2client.contrib import gce
@@ -650,8 +649,8 @@ def upload_if_allowed(args, status, destination,
                 args.rsync_host, args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_host, args.rsync_module, args.bucket)
-        spreadsheet.update_high_water_mark(rsync_url, day)
+        status.update_high_water_mark(day)
         if max_mtime is not None:
-            spreadsheet.update_mtime(rsync_url, max_mtime)
+            status.update_mtime(max_mtime)
         remove_datafiles(destination, day)
     status.update_debug_message('')
