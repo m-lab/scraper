@@ -18,11 +18,10 @@
 """This program runs the MLab scraper in a loop.
 
 run-scraper.py is intended to be the CMD for the docker container in which the
-scraper runs.  Every argument that run-scraper does not parse is passed through
-verbatim to scraper.py.  By default, run-scraper will try to scrape the given
-target every half an hour (on average, but with exponential jitter to assure a
-memoryless distribution of runtimes).  run-scraper reports its status both via
-logging messages and a Prometheus metrics port.
+scraper runs.  By default, run-scraper will try to scrape the given target every
+half an hour (on average, but with exponential jitter to assure a memoryless
+distribution of runtimes).  run-scraper reports its status both via logging
+messages and a Prometheus metrics port.
 """
 
 import argparse
@@ -133,7 +132,12 @@ def parse_cmdline(args):
         metavar='NAMESPACE',
         type=str,
         default='scraper',
-        help='The cloud datastore namespace to use in the current project.')
+        help='The cloud datastore namespace to use in the current project. '
+             'Every google cloud project has one datastore associated with '
+             'it. In order for us to run multiple scrapers within the same '
+             'cloud project, we add a "namespace" element to every key. This '
+             'way, independent parallel deployments can use the same datastore '
+             'and not need independent projects.')
     parser.add_argument(
         '--tar_binary',
         metavar='TAR',

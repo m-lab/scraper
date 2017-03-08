@@ -15,20 +15,13 @@
 
 """Download all new data from an MLab node, then upload what can be uploaded.
 
-This is a library to download data from an MLab node and then upload it to
-Google Cloud Storage.  It is expected that the functions here will be called
-repeatedly and that there will be many instances of simultaneously on one or
-more machines.
+This is a library to download data from an MLab node, upload data to
+Google Cloud Storage, and update Cloud Datastore with the results.  Because of
+the vagaries of the discovery API and some command-line options that need to be
+set, the init() function in this library should be the first thing called.
 
-This program expects to be run on GCE and uses both cloud APIs and the Google
-Sheets API.  Sheets API access is not enabled by default for GCE, and it can't
-be enabled from the web-based GCE instance creation interface.  Worse, the
-scopes that a GCE instance has can't be changed after creation. To create a new
-GCE instance named scraper-dev that has access to both cloud APIs and
-spreadsheet apis, you need to use the following command line:
-
-   gcloud compute instances create scraper-dev \
-       --scopes cloud-platform,https://www.googleapis.com/auth/spreadsheets
+This program expects to be run on GCE and uses cloud APIs with the default
+credentials available to a GCE instance.
 """
 
 import contextlib
@@ -469,31 +462,31 @@ def remove_datafiles(directory, day):
             os.rmdir(year_dir)
 
 
-def cell_to_date_or_die(cell_text):
-    """Converts a cell of the form 'x2016-01-28' into a date."""
+def xdate_to_date_or_die(xdate_text):
+    """Converts a string of the form 'x2016-01-28' into a date."""
     try:
-        assert cell_text.count('-') == 2 and cell_text[0] == 'x'
-        year, month, day = cell_text[1:].split('-')
+        assert xdate_text.count('-') == 2 and xdate_text[0] == 'x'
+        year, month, day = xdate_text[1:].split('-')
         assert year.isdigit() and month.isdigit() and day.isdigit()
         return datetime.date(int(year, 10), int(month, 10), int(day, 10))
     except (AssertionError, ValueError):
-        logging.error('Bad spreadsheet cell for the date: "%s"', cell_text)
+        logging.error('Bad date string: "%s"', xdate_text)
         sys.exit(1)
 
 
 class Status(object):
     """Saves and retrieves the status of an rsync endpoint from Datastore."""
 
-    RSYNC_COLUMN = 'dropboxrsyncaddress'
-    COLLECTION_COLUMN = 'lastsuccessfulcollection'
-    DEBUG_MESSAGE_COLUMN = 'errorsincelastsuccessful'
-    LAST_COLLECTION_COLUMN = 'lastcollectionattempt'
-    MTIME_COLUMN = 'maxrawfilemtimearchived'
-    NAMESPACE = ''
+    RSYNC_KEY = 'dropboxrsyncaddress'
+    COLLECTION_KEY = 'lastsuccessfulcollection'
+    DEBUG_MESSAGE_KEY = 'errorsincelastsuccessful'
+    LAST_COLLECTION_KEY = 'lastcollectionattempt'
+    MTIME_KEY = 'maxrawfilemtimearchived'
 
-    def __init__(self, client, rsync_url):
+    def __init__(self, client, rsync_url, namespace):
         self._client = client
         self._rsync_url = rsync_url
+        self._namespace = namespace
         self._key = None
         self._entity = None
 
@@ -503,7 +496,7 @@ class Status(object):
         A separate function so that it can be mocked for testing purposes.
         """
         if self._key is None:
-            self._key = self._client.key('namespace', Status.NAMESPACE,
+            self._key = self._client.key('namespace', self._namespace,
                                          'rsync_url', self._rsync_url)
         return self._client.get(self._key)
 
@@ -521,13 +514,13 @@ class Status(object):
         if not value:
             logging.info('No data found in the datastore')
             return default_date
-        elif (Status.COLLECTION_COLUMN not in value or
-              not value[Status.COLLECTION_COLUMN]):
+        elif (Status.COLLECTION_KEY not in value or
+              not value[Status.COLLECTION_KEY]):
             logging.info('Data in the datastore had no %s',
-                         Status.COLLECTION_COLUMN)
+                         Status.COLLECTION_KEY)
             return default_date
         else:
-            return cell_to_date_or_die(value[Status.COLLECTION_COLUMN])
+            return xdate_to_date_or_die(value[Status.COLLECTION_KEY])
 
     def update_data(self, entry_key, entry_value):  # pragma: no cover
         """Updates a datastore value.
@@ -549,20 +542,20 @@ class Status(object):
     def update_high_water_mark(self, date):
         """Updates the date before which it is safe to delete data."""
         date_str = 'x%d-%02d-%02d' % (date.year, date.month, date.day)
-        self.update_data(self.COLLECTION_COLUMN, date_str)
+        self.update_data(self.COLLECTION_KEY, date_str)
 
     def update_debug_message(self, message):
         """Updates the debug message on the spreadsheet."""
-        self.update_data(self.DEBUG_MESSAGE_COLUMN, message)
+        self.update_data(self.DEBUG_MESSAGE_KEY, message)
 
     def update_last_collection(self):
         """Updates the last collection time on the spreadsheet."""
         text = datetime.datetime.utcnow().strftime('x%Y-%02m-%02d-%02H:%02M')
-        self.update_data(self.LAST_COLLECTION_COLUMN, text)
+        self.update_data(self.LAST_COLLECTION_KEY, text)
 
     def update_mtime(self, mtime):
         """Updates the mtime column on the spreadsheet."""
-        self.update_data(self.MTIME_COLUMN, mtime)
+        self.update_data(self.MTIME_KEY, mtime)
 
 
 class StatusLogHandler(logging.Handler):
@@ -592,26 +585,25 @@ def init(args):  # pragma: no cover
     """
     rsync_url = 'rsync://{}:{}/{}'.format(args.rsync_host, args.rsync_port,
                                           args.rsync_module)
+    # Set up logging
     logging.basicConfig(
         level=logging.DEBUG,
         format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d ' +
         rsync_url + '] %(message)s')
-
     logging.info('Scraping from %s, putting the results in %s', rsync_url,
                  args.bucket)
 
     # Authorize this application to use Google APIs.
     creds = gce.AppAssertionCredentials()
 
-    # Set up the Sheets and Cloud Storage APIs.
-    Status.NAMESPACE = args.datastore_namespace
+    # Set up cloud datastore and its dependencies
     datastore_service = datastore.Client()
-    status = Status(datastore_service, rsync_url)
+    status = Status(datastore_service, rsync_url, args.datastore_namespace)
+    logging.getLogger().addHandler(StatusLogHandler(status))
+
+    # Set up cloud storage
     storage_service = apiclient.discovery.build(
         'storage', 'v1', credentials=creds)
-
-    status.update_last_collection()
-    logging.getLogger().addHandler(StatusLogHandler(status))
 
     # If the destination directory does not exist, make it exist.
     destination = os.path.join(args.data_dir, args.rsync_host,
@@ -627,6 +619,7 @@ def download(rsync_binary, rsync_url, status, destination):  # pragma: no cover
     Find the current progress level from the spreadsheet, then get the file list
     and download the files from the server.
     """
+    status.update_last_collection()
     progress_level = status.get_progress()
     all_files = list_rsync_files(rsync_binary, rsync_url)
     newer_files = remove_older_files(progress_level, all_files)
