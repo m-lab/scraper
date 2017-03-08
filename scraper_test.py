@@ -407,10 +407,9 @@ BADBADBAD
     def test_get_progress_from_spreadsheet_bad_date(self, patched_get):
         status = scraper.Status(None, None, None)
         with self.assertRaises(SystemExit):
-            rsync_url = u'rsync://localhost:1234/ndt'
             patched_get.return_value = dict(
                 lastsuccessfulcollection='2009-13-10')
-            status.get_progress(rsync_url)
+            status.get_progress()
 
     @mock.patch.object(scraper.Status, 'get_data')
     def test_get_progress_from_spreadsheet_empty_date(self, patched_get):
@@ -423,9 +422,8 @@ BADBADBAD
     @mock.patch.object(scraper.Status, 'get_data')
     def test_get_progress_from_spreadsheet(self, patched_get):
         status = scraper.Status(None, None, None)
-        rsync_url = u'rsync://localhost:1234/ndt'
         patched_get.return_value = dict(lastsuccessfulcollection='x2010-11-02')
-        high_water_mark = status.get_progress(rsync_url)
+        high_water_mark = status.get_progress()
         self.assertEqual(high_water_mark, datetime.date(2010, 11, 2))
 
     @mock.patch.object(scraper.Status, 'update_data')
