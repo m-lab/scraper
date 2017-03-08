@@ -69,7 +69,10 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(args.rsync_port, 7999)
         self.assertEqual(args.max_uncompressed_size, 1000000000)
 
-    def test_args_help(self):
+    # Patching this prevents ArgumentParser from printing anything.  It's
+    # potentially brittle, but the readability gains are worth it.
+    @mock.patch.object(argparse.ArgumentParser, '_print_message')
+    def test_args_help(self, _patched_argparse):
         with self.assertRaises(SystemExit):
             with testfixtures.OutputCapture() as _:
                 run_scraper.parse_cmdline(['-h'])
@@ -620,7 +623,7 @@ BADBADBAD
         patched_update_data.assert_called_once_with(
             'maxrawfilemtimearchived', 7)
 
-    @mock.patch.object(scraper.SyncStatus, 'update_data')
+    @mock.patch.object(scraper.Status, 'update_data')
     @testfixtures.log_capture()
     def test_log_handler(self, patched_update_data, _log):
         status = scraper.SyncStatus(None, None)
