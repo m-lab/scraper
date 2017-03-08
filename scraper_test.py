@@ -29,11 +29,19 @@ import unittest
 
 import freezegun
 import mock
-import scraper
+import testfixtures
+
 import run_scraper
+import scraper
 
 
 class TestScraper(unittest.TestCase):
+
+    def setUp(self):
+        # If you depend on log messages, use testfixtures.log_capture() to test
+        # for their presence and assert their contents.  For the purposes of
+        # the test runner, log messages on stdout/stderr are spam.
+        logging.getLogger().setLevel(logging.WARNING)
 
     def test_args(self):
         rsync_host = 'mlab1.dne0t.measurement-lab.org'
@@ -62,13 +70,16 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(args.rsync_port, 7999)
         self.assertEqual(args.max_uncompressed_size, 1000000000)
 
+    # Patching this prevents ArgumentParser from printing anything.  It's
+    # potentially brittle, but the readability gains are worth it.
     @mock.patch.object(argparse.ArgumentParser, '_print_message')
     def test_args_help(self, _patched_argparse):
         with self.assertRaises(SystemExit):
             run_scraper.parse_cmdline(['-h'])
 
     @mock.patch.object(subprocess, 'check_output')
-    def test_list_rsync_files(self, patched_subprocess):
+    @testfixtures.log_capture()
+    def test_list_rsync_files(self, patched_subprocess, log):
         # pylint: disable=line-too-long
         serverfiles = """\
 drwxr-xr-x          4,096 2016/01/06 05:43:33 .
@@ -93,12 +104,18 @@ BADBADBAD
             '2016/01/06/20160106T18:07:33.122784000Z_:0.meta',
             '2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz'
         ], files)
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+        self.assertTrue(any(any('BADBADBAD' in arg for arg in record.args)
+                            for record in log.records))
 
-    def test_list_rsync_files_fails(self):
+    @testfixtures.log_capture()
+    def test_list_rsync_files_fails(self, log):
         with self.assertRaises(SystemExit):
             scraper.list_rsync_files('/bin/false', 'localhost')
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
-    def test_remove_older_files(self):
+    @testfixtures.log_capture()
+    def test_remove_older_files(self, log):
         # pylint: disable=line-too-long
         files = [
             'monkey/06/.gz',
@@ -137,17 +154,28 @@ BADBADBAD
             '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:50264.s2c_snaplog.gz',
             '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:52410.c2s_snaplog.gz'
         ])
+        self.assertIn('WARNING', [x.levelname for x in log.records])
+        self.assertTrue(any(any('monkey' in arg for arg in record.args)
+                            for record in log.records))
+        self.assertTrue(any(any('BADYEAR' in arg for arg in record.args)
+                            for record in log.records))
+        self.assertTrue(any(any('10/35' in arg for arg in record.args)
+                            for record in log.records))
         # pylint: enable=line-too-long
 
-    def test_download_files_fails_and_dies(self):
+    @testfixtures.log_capture()
+    def test_download_files_fails_and_dies(self, log):
         with self.assertRaises(SystemExit):
             scraper.download_files('/bin/false', 'localhost/',
                                    ['2016/10/26/DNE1', '2016/10/26/DNE2'],
                                    '/tmp')
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
-    def test_download_files_with_empty_does_nothing(self):
+    @testfixtures.log_capture()
+    def test_download_files_with_empty_does_nothing(self, log):
         # If the next line doesn't raise SystemExit then the test passes
         scraper.download_files('/bin/false', 'localhost/', [], '/tmp')
+        self.assertIn('WARNING', [x.levelname for x in log.records])
 
     @mock.patch.object(subprocess, 'check_call')
     def test_download_files(self, patched_check_call):
@@ -182,7 +210,8 @@ BADBADBAD
         finally:
             shutil.rmtree(temp_d)
 
-    def test_find_all_days_to_upload(self):
+    @testfixtures.log_capture()
+    def test_find_all_days_to_upload(self, log):
         try:
             temp_d = tempfile.mkdtemp()
             date = datetime.date(2016, 7, 6)
@@ -205,6 +234,7 @@ BADBADBAD
             ])
         finally:
             shutil.rmtree(temp_d)
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
     def test_chdir(self):
         try:
@@ -265,7 +295,8 @@ BADBADBAD
         finally:
             shutil.rmtree(temp_d)
 
-    def test_create_tarfile_fails_on_existing_tarfile(self):
+    @testfixtures.log_capture()
+    def test_create_tarfile_fails_on_existing_tarfile(self, log):
         try:
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
@@ -280,8 +311,10 @@ BADBADBAD
                         ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
         finally:
             shutil.rmtree(temp_d)
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
-    def test_create_tarfile_fails_on_tar_failure(self):
+    @testfixtures.log_capture()
+    def test_create_tarfile_fails_on_tar_failure(self, log):
         try:
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
@@ -294,8 +327,10 @@ BADBADBAD
                         ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
         finally:
             shutil.rmtree(temp_d)
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
-    def test_create_tarfile_fails_when_file_is_missing(self):
+    @testfixtures.log_capture()
+    def test_create_tarfile_fails_when_file_is_missing(self, log):
         try:
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
@@ -309,6 +344,7 @@ BADBADBAD
                         ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
         finally:
             shutil.rmtree(temp_d)
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
     def test_create_tarfiles(self):
         try:
@@ -417,12 +453,14 @@ BADBADBAD
         self.assertEqual(last_archived_date, datetime.date(2009, 1, 1))
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
-    def test_get_last_archived_date_bad_date(self, patched_get):
+    @testfixtures.log_capture()
+    def test_get_last_archived_date_bad_date(self, patched_get, log):
         status = scraper.SyncStatus(None, None, None)
         with self.assertRaises(SystemExit):
             patched_get.return_value = dict(
                 lastsuccessfulcollection='2009-13-10')
             status.get_last_archived_date()
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
     def test_get_last_archived_date_empty_date(self, patched_get):
@@ -513,7 +551,8 @@ BADBADBAD
             'maxrawfilemtimearchived', 7)
 
     @mock.patch.object(scraper.SyncStatus, 'update_data')
-    def test_log_handler(self, patched_update_data):
+    @testfixtures.log_capture()
+    def test_log_handler(self, patched_update_data, _log):
         status = scraper.SyncStatus(None, None, None)
         loghandler = scraper.SyncStatusLogHandler(status)
         logger = logging.getLogger('temp_test')
@@ -540,7 +579,8 @@ BADBADBAD
         finally:
             shutil.rmtree(temp_d)
 
-    def test_attempt_decompression_gunzip_failure(self):
+    @testfixtures.log_capture()
+    def test_attempt_decompression_gunzip_failure(self, log):
         try:
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
@@ -553,8 +593,10 @@ BADBADBAD
                     scraper.attempt_decompression('/bin/false', 'test.gz'))
         finally:
             shutil.rmtree(temp_d)
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
-    def test_attempt_decompression_disappearing_file(self):
+    @testfixtures.log_capture()
+    def test_attempt_decompression_disappearing_file(self, log):
         try:
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
@@ -567,8 +609,10 @@ BADBADBAD
                     scraper.attempt_decompression('/bin/true', 'test.gz'))
         finally:
             shutil.rmtree(temp_d)
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
-    def test_attempt_decompression_no_clobber(self):
+    @testfixtures.log_capture()
+    def test_attempt_decompression_no_clobber(self, log):
         try:
             temp_d = tempfile.mkdtemp()
             with scraper.chdir(temp_d):
@@ -584,6 +628,7 @@ BADBADBAD
                 self.assertTrue(os.path.exists('test'))
         finally:
             shutil.rmtree(temp_d)
+        self.assertIn('WARNING', [x.levelname for x in log.records])
 
     def test_run_scraper_has_docstring(self):
         # run_scraper should only be tested by end-to-end tests. However, by
