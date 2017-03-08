@@ -18,6 +18,7 @@
 #
 # pylint: disable=missing-docstring, no-self-use, too-many-public-methods
 
+import argparse
 import datetime
 import logging
 import os
@@ -61,7 +62,8 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(args.rsync_port, 7999)
         self.assertEqual(args.max_uncompressed_size, 1000000000)
 
-    def test_args_help(self):
+    @mock.patch.object(argparse.ArgumentParser, '_print_message')
+    def test_args_help(self, _patched_argparse):
         with self.assertRaises(SystemExit):
             run_scraper.parse_cmdline(['-h'])
 
