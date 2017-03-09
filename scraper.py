@@ -641,7 +641,7 @@ def init(args):  # pragma: no cover
                                           args.rsync_module)
     # Set up logging
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format='[%(asctime)s %(levelname)s %(filename)s:%(lineno)d ' +
         rsync_url + '] %(message)s')
     logging.info('Scraping from %s, putting the results in %s', rsync_url,
