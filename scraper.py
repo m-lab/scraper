@@ -474,7 +474,7 @@ def xdate_to_date_or_die(xdate_text):
         sys.exit(1)
 
 
-class Status(object):
+class SyncStatus(object):
     """Saves and retrieves the status of an rsync endpoint from Datastore."""
 
     RSYNC_KEY = 'dropboxrsyncaddress'
@@ -490,8 +490,8 @@ class Status(object):
         self._key = None
         self._entity = None
 
-    def get_data(self):  # pragma: no cover
-        """Retrieves data from a spreadsheet.
+    def get_data(self):
+        """Retrieves data from cloud datastore.
 
         A separate function so that it can be mocked for testing purposes.
         """
@@ -503,24 +503,22 @@ class Status(object):
     def get_progress(self, default_date=datetime.date(2009, 1, 1)):
         """Returns the most recent date from which we have all the data.
 
-        Downloads everything in the spreadsheet, then finds the right row, and
-        then the right column in that row, and returns the date stored at that
-        cell.
+        Used to determine what local data is safe to delete.
 
         Args:
-          default_date: the time to return if the row does not exist
+          default_date: the date to return if no datastore entry exists
         """
         value = self.get_data()
         if not value:
             logging.info('No data found in the datastore')
             return default_date
-        elif (Status.COLLECTION_KEY not in value or
-              not value[Status.COLLECTION_KEY]):
+        elif (SyncStatus.COLLECTION_KEY not in value or
+              not value[SyncStatus.COLLECTION_KEY]):
             logging.info('Data in the datastore had no %s',
-                         Status.COLLECTION_KEY)
+                         SyncStatus.COLLECTION_KEY)
             return default_date
         else:
-            return xdate_to_date_or_die(value[Status.COLLECTION_KEY])
+            return xdate_to_date_or_die(value[SyncStatus.COLLECTION_KEY])
 
     def update_data(self, entry_key, entry_value):  # pragma: no cover
         """Updates a datastore value.
@@ -528,7 +526,7 @@ class Status(object):
         If no value for the key exists, then one will be created.
 
         Args:
-          entry_key: must be one of the header values
+          entry_key: must be one of the static values in SyncStatus
           entry_value: the new value to write to the datastore entry
         """
         value = self.get_data()
@@ -545,21 +543,21 @@ class Status(object):
         self.update_data(self.COLLECTION_KEY, date_str)
 
     def update_debug_message(self, message):
-        """Updates the debug message on the spreadsheet."""
+        """Updates the debug message in cloud datastore."""
         self.update_data(self.DEBUG_MESSAGE_KEY, message)
 
     def update_last_collection(self):
-        """Updates the last collection time on the spreadsheet."""
+        """Updates the last collection time in cloud datastore."""
         text = datetime.datetime.utcnow().strftime('x%Y-%02m-%02d-%02H:%02M')
         self.update_data(self.LAST_COLLECTION_KEY, text)
 
     def update_mtime(self, mtime):
-        """Updates the mtime column on the spreadsheet."""
+        """Updates the mtime column in cloud datastore."""
         self.update_data(self.MTIME_KEY, mtime)
 
 
-class StatusLogHandler(logging.Handler):
-    """Handles error log messages by writing them to the shared spreadsheet."""
+class SyncStatusLogHandler(logging.Handler):
+    """Handles error log messages by writing them to cloud datastore."""
 
     def __init__(self, status_storage):
         logging.Handler.__init__(self, level=logging.ERROR)
@@ -598,8 +596,8 @@ def init(args):  # pragma: no cover
 
     # Set up cloud datastore and its dependencies
     datastore_service = datastore.Client()
-    status = Status(datastore_service, rsync_url, args.datastore_namespace)
-    logging.getLogger().addHandler(StatusLogHandler(status))
+    status = SyncStatus(datastore_service, rsync_url, args.datastore_namespace)
+    logging.getLogger().addHandler(SyncStatusLogHandler(status))
 
     # Set up cloud storage
     storage_service = apiclient.discovery.build(
@@ -616,7 +614,7 @@ def init(args):  # pragma: no cover
 def download(rsync_binary, rsync_url, status, destination):  # pragma: no cover
     """Rsync download all files that are new enough.
 
-    Find the current progress level from the spreadsheet, then get the file list
+    Find the current progress level from cloud datastore, then get the file list
     and download the files from the server.
     """
     status.update_last_collection()

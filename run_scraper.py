@@ -137,7 +137,12 @@ def parse_cmdline(args):
              'it. In order for us to run multiple scrapers within the same '
              'cloud project, we add a "namespace" element to every key. This '
              'way, independent parallel deployments can use the same datastore '
-             'and not need independent projects.')
+             'and not need independent projects.  To run a separate '
+             'independent scraper in the same project, choose a different '
+             'argument for the datastore_namespace. Otherwise, the same '
+             'datastore entries will be being updated by two independent '
+             'scrapers, and then the nodes might delete data before the '
+             'authoritative scraper has successfully scraped it off of them.')
     parser.add_argument(
         '--tar_binary',
         metavar='TAR',

@@ -389,46 +389,57 @@ BADBADBAD
         finally:
             shutil.rmtree(temp_d)
 
-    @mock.patch.object(scraper.Status, 'get_data')
+    def test_get_data_caches_key(self):
+        client = mock.Mock()
+        client.key.return_value = {}
+        status = scraper.SyncStatus(client, None, None)
+        status.get_data()
+        client.key.assert_called_once()
+        client.get.assert_called_once()
+        status.get_data()
+        self.assertEqual(client.key.call_count, 1)
+        self.assertEqual(client.get.call_count, 2)
+
+    @mock.patch.object(scraper.SyncStatus, 'get_data')
     def test_get_progress_from_status_default(self, patched_get):
         patched_get.return_value = None
-        status = scraper.Status(None, None, None)
+        status = scraper.SyncStatus(None, None, None)
         high_water_mark = status.get_progress()
         self.assertEqual(high_water_mark, datetime.date(2009, 1, 1))
 
-    @mock.patch.object(scraper.Status, 'get_data')
+    @mock.patch.object(scraper.SyncStatus, 'get_data')
     def test_get_progress_from_status_no_date(self, patched_get):
         patched_get.return_value = dict(irrelevant='monkey')
-        status = scraper.Status(None, None, None)
+        status = scraper.SyncStatus(None, None, None)
         high_water_mark = status.get_progress()
         self.assertEqual(high_water_mark, datetime.date(2009, 1, 1))
 
-    @mock.patch.object(scraper.Status, 'get_data')
-    def test_get_progress_from_spreadsheet_bad_date(self, patched_get):
-        status = scraper.Status(None, None, None)
+    @mock.patch.object(scraper.SyncStatus, 'get_data')
+    def test_get_progress_bad_date(self, patched_get):
+        status = scraper.SyncStatus(None, None, None)
         with self.assertRaises(SystemExit):
             patched_get.return_value = dict(
                 lastsuccessfulcollection='2009-13-10')
             status.get_progress()
 
-    @mock.patch.object(scraper.Status, 'get_data')
-    def test_get_progress_from_spreadsheet_empty_date(self, patched_get):
-        status = scraper.Status(None, None, None)
+    @mock.patch.object(scraper.SyncStatus, 'get_data')
+    def test_get_progress_empty_date(self, patched_get):
+        status = scraper.SyncStatus(None, None, None)
         patched_get.return_value = dict(lastsuccessfulcollection='')
         default_date = datetime.date(1970, 1, 1)
         self.assertEqual(status.get_progress(default_date),
                          default_date)
 
-    @mock.patch.object(scraper.Status, 'get_data')
-    def test_get_progress_from_spreadsheet(self, patched_get):
-        status = scraper.Status(None, None, None)
+    @mock.patch.object(scraper.SyncStatus, 'get_data')
+    def test_get_progress(self, patched_get):
+        status = scraper.SyncStatus(None, None, None)
         patched_get.return_value = dict(lastsuccessfulcollection='x2010-11-02')
         high_water_mark = status.get_progress()
         self.assertEqual(high_water_mark, datetime.date(2010, 11, 2))
 
-    @mock.patch.object(scraper.Status, 'update_data')
+    @mock.patch.object(scraper.SyncStatus, 'update_data')
     def test_high_water_mark(self, patched_update):
-        status = scraper.Status(None, None, None)
+        status = scraper.SyncStatus(None, None, None)
         status.update_high_water_mark(datetime.date(2012, 2, 29))
         patched_update.assert_called_once()
         self.assertTrue('x2012-02-29' in patched_update.call_args[0])
@@ -470,32 +481,32 @@ BADBADBAD
             with self.assertRaises(AssertionError):
                 scraper.assert_mlab_hostname(bad_name)
 
-    @mock.patch.object(scraper.Status, 'update_data')
+    @mock.patch.object(scraper.SyncStatus, 'update_data')
     def test_update_debug_msg(self, patched_update_data):
-        status = scraper.Status(None, None, None)
+        status = scraper.SyncStatus(None, None, None)
         status.update_debug_message('msg')
         patched_update_data.assert_called_once_with(
             'errorsincelastsuccessful', 'msg')
 
     @freezegun.freeze_time('2016-01-28 07:43:16 UTC')
-    @mock.patch.object(scraper.Status, 'update_data')
+    @mock.patch.object(scraper.SyncStatus, 'update_data')
     def test_update_last_collection(self, patched_update_data):
-        status = scraper.Status(None, None, None)
+        status = scraper.SyncStatus(None, None, None)
         status.update_last_collection()
         patched_update_data.assert_called_once_with('lastcollectionattempt',
                                                     'x2016-01-28-07:43')
 
-    @mock.patch.object(scraper.Status, 'update_data')
+    @mock.patch.object(scraper.SyncStatus, 'update_data')
     def test_update_mtime(self, patched_update_data):
-        status = scraper.Status(None, None, None)
+        status = scraper.SyncStatus(None, None, None)
         status.update_mtime(7)
         patched_update_data.assert_called_once_with(
             'maxrawfilemtimearchived', 7)
 
-    @mock.patch.object(scraper.Status, 'update_data')
-    def test_spreadsheet_log_handler(self, patched_update_data):
-        status = scraper.Status(None, None, None)
-        loghandler = scraper.StatusLogHandler(status)
+    @mock.patch.object(scraper.SyncStatus, 'update_data')
+    def test_log_handler(self, patched_update_data):
+        status = scraper.SyncStatus(None, None, None)
+        loghandler = scraper.SyncStatusLogHandler(status)
         logger = logging.getLogger('temp_test')
         logger.setLevel(logging.ERROR)
         logger.addHandler(loghandler)
