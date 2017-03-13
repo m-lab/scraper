@@ -623,7 +623,7 @@ BADBADBAD
         patched_update_data.assert_called_once_with(
             'maxrawfilemtimearchived', 7)
 
-    @mock.patch.object(scraper.Status, 'update_data')
+    @mock.patch.object(scraper.SyncStatus, 'update_data')
     @testfixtures.log_capture()
     def test_log_handler(self, patched_update_data, _log):
         status = scraper.SyncStatus(None, None)
