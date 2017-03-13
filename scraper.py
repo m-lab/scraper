@@ -548,7 +548,7 @@ class SyncStatus(object):
         else:
             return xdate_to_date_or_die(value[SyncStatus.COLLECTION_KEY])
 
-    def update_data(self, entry_key, entry_value):  # pragma: no cover
+    def update_data(self, entry_key, entry_value):
         """Updates a datastore value.
 
         If no value for the key exists, then one will be created.

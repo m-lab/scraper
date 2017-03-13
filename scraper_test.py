@@ -444,6 +444,13 @@ BADBADBAD
         patched_update.assert_called_once()
         self.assertTrue('x2012-02-29' in patched_update.call_args[0])
 
+    def test_update_data_no_value(self):
+        client = mock.Mock()
+        client.get.return_value = None
+        status = scraper.SyncStatus(client, None, None)
+        status.update_data('key', 'value')
+        client.put.assert_called_once()
+
     def test_remove_datafiles_all_finished(self):
         try:
             temp_d = tempfile.mkdtemp()
