@@ -184,7 +184,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
         logging.info('sync completed successfully from %s', rsync_url)
 
 
-def max_new_high_water_mark():
+def max_new_archived_date():
     """The most recent date that we could consider "old enough" to upload.
 
     8 hours after midnight, we will assume that no tests from the previous
@@ -199,7 +199,7 @@ def max_new_high_water_mark():
         days=1, hours=8)).date()
 
 
-def find_all_days_to_upload(localdir, high_water_mark):
+def find_all_days_to_upload(localdir, candidate_last_archived_date):
     """Find all the days that are eligible to be uploaded.
 
     Search through localdir, trying to find all the data that is from a day that
@@ -207,7 +207,8 @@ def find_all_days_to_upload(localdir, high_water_mark):
 
     Args:
       localdir: the local directory containing all the data
-      high_water_mark: the most recent day that is eligible to be uploaded
+      candidate_last_archived_date: the most recent day that is eligible to be
+                                    uploaded
 
     Yields:
       a sequence of days that exist on the localhost and are old enough to be
@@ -232,7 +233,7 @@ def find_all_days_to_upload(localdir, high_water_mark):
                         year=int(year, 10),
                         month=int(month, 10),
                         day=int(day, 10))
-                    if date <= high_water_mark:
+                    if date <= candidate_last_archived_date:
                         yield date
                 except ValueError as verr:
                     logging.error('Bad directory that looks like a day: %s %s',
@@ -475,7 +476,31 @@ def xdate_to_date_or_die(xdate_text):
 
 
 class SyncStatus(object):
-    """Saves and retrieves the status of an rsync endpoint from Datastore."""
+    """Saves and retrieves the status of an rsync endpoint from Datastore.
+
+    All get_* and update_* methods cause remote reads and writes to the Cloud
+    Datastore instance associated with the current Google Cloud project.
+
+    By design, every running scraper instance should be associated with one
+    (and only one) datastore Entity, and every Entity should be associated with
+    at most one running scraper instance.  To enforce this invariant, we use a
+    namespace field in combination with the rsync url and the cloud project
+    name (which is implicitly specified as the name of the project in which the
+    instance is running).
+
+    A separate process will repeatedly query cloud datastore to find every
+    Entity in the project's Datastore with a particular namespace, and then
+    update the coordinating spreadsheet to contain the same data as exists in
+    cloud datastore.  The 'ground truth' of the system is maintained in cloud
+    datastore, and the spreadsheet should be regarded as merely a display layer
+    on top of that dataset.
+
+    Failure to update the rsync cloud datastore cell would mean that data would
+    build up on the nodes and the data deletion service would not know it could
+    delete uploaded data.  If a rogue process updated the cloud datastore cell,
+    then the node might delete data that had not yet been uploaded to the right
+    cloud datastore bucket.
+    """
 
     RSYNC_KEY = 'dropboxrsyncaddress'
     COLLECTION_KEY = 'lastsuccessfulcollection'
@@ -500,10 +525,13 @@ class SyncStatus(object):
                                          'rsync_url', self._rsync_url)
         return self._client.get(self._key)
 
-    def get_progress(self, default_date=datetime.date(2009, 1, 1)):
+    def get_last_archived_date(self, default_date=datetime.date(2009, 1, 1)):
         """Returns the most recent date from which we have all the data.
 
-        Used to determine what local data is safe to delete.
+        Used to determine what local data on a node has been archived and is
+        safe to delete, and also what data must be downloaded from a node, and
+        what data need not be downloaded.  It is expected that this quantity
+        will be monotonically increasing.
 
         Args:
           default_date: the date to return if no datastore entry exists
@@ -537,7 +565,7 @@ class SyncStatus(object):
         value[entry_key] = entry_value
         self._client.put(value)
 
-    def update_high_water_mark(self, date):
+    def update_last_archived_date(self, date):
         """Updates the date before which it is safe to delete data."""
         date_str = 'x%d-%02d-%02d' % (date.year, date.month, date.day)
         self.update_data(self.COLLECTION_KEY, date_str)
@@ -614,13 +642,13 @@ def init(args):  # pragma: no cover
 def download(rsync_binary, rsync_url, status, destination):  # pragma: no cover
     """Rsync download all files that are new enough.
 
-    Find the current progress level from cloud datastore, then get the file list
-    and download the files from the server.
+    Find the current last_archived_date from cloud datastore, then get the file
+    list and download the files from the server.
     """
     status.update_last_collection()
-    progress_level = status.get_progress()
+    last_archived_date = status.get_last_archived_date()
     all_files = list_rsync_files(rsync_binary, rsync_url)
-    newer_files = remove_older_files(progress_level, all_files)
+    newer_files = remove_older_files(last_archived_date, all_files)
     download_files(rsync_binary, rsync_url, newer_files, destination)
 
 
@@ -629,18 +657,19 @@ def upload_if_allowed(args, status, destination,
     """If enough time has passed, upload old data to GCS.
 
     Tar up what we have for each un-uploaded day that is sufficiently in the
-    past (up to and including the new high water mark), upload what we have, and
+    past (up to and including the new archive date), upload what we have, and
     delete the local copies of all successfully-uploaded data.
     """
-    new_high_water_mark = max_new_high_water_mark()
-    for day in find_all_days_to_upload(destination, new_high_water_mark):
+    candidate_last_archived_date = max_new_archived_date()
+    for day in find_all_days_to_upload(destination,
+                                       candidate_last_archived_date):
         max_mtime = None
         for tgz_filename, max_mtime in create_temporary_tarfiles(
                 args.tar_binary, args.gunzip_binary, destination, day,
                 args.rsync_host, args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_host, args.rsync_module, args.bucket)
-        status.update_high_water_mark(day)
+        status.update_last_archived_date(day)
         if max_mtime is not None:
             status.update_mtime(max_mtime)
         remove_datafiles(destination, day)

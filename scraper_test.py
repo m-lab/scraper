@@ -162,13 +162,13 @@ BADBADBAD
         self.assertEqual(patched_check_call.call_count, 1)
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
-    def test_high_water_mark_after_8am(self):
-        self.assertEqual(scraper.max_new_high_water_mark(),
+    def test_new_archived_date_after_8am(self):
+        self.assertEqual(scraper.max_new_archived_date(),
                          datetime.date(2016, 1, 27))
 
     @freezegun.freeze_time('2016-01-28 07:43:16 UTC')
-    def test_high_water_mark_before_8am(self):
-        self.assertEqual(scraper.max_new_high_water_mark(),
+    def test_new_archived_date_before_8am(self):
+        self.assertEqual(scraper.max_new_archived_date(),
                          datetime.date(2016, 1, 26))
 
     def test_find_all_days_to_upload_empty_okay(self):
@@ -401,46 +401,46 @@ BADBADBAD
         self.assertEqual(client.get.call_count, 2)
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
-    def test_get_progress_from_status_default(self, patched_get):
+    def test_get_last_archived_date_from_status_default(self, patched_get):
         patched_get.return_value = None
         status = scraper.SyncStatus(None, None, None)
-        high_water_mark = status.get_progress()
-        self.assertEqual(high_water_mark, datetime.date(2009, 1, 1))
+        last_archived_date = status.get_last_archived_date()
+        self.assertEqual(last_archived_date, datetime.date(2009, 1, 1))
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
-    def test_get_progress_from_status_no_date(self, patched_get):
+    def test_get_last_archived_date_from_status_no_date(self, patched_get):
         patched_get.return_value = dict(irrelevant='monkey')
         status = scraper.SyncStatus(None, None, None)
-        high_water_mark = status.get_progress()
-        self.assertEqual(high_water_mark, datetime.date(2009, 1, 1))
+        last_archived_date = status.get_last_archived_date()
+        self.assertEqual(last_archived_date, datetime.date(2009, 1, 1))
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
-    def test_get_progress_bad_date(self, patched_get):
+    def test_get_last_archived_date_bad_date(self, patched_get):
         status = scraper.SyncStatus(None, None, None)
         with self.assertRaises(SystemExit):
             patched_get.return_value = dict(
                 lastsuccessfulcollection='2009-13-10')
-            status.get_progress()
+            status.get_last_archived_date()
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
-    def test_get_progress_empty_date(self, patched_get):
+    def test_get_last_archived_date_empty_date(self, patched_get):
         status = scraper.SyncStatus(None, None, None)
         patched_get.return_value = dict(lastsuccessfulcollection='')
         default_date = datetime.date(1970, 1, 1)
-        self.assertEqual(status.get_progress(default_date),
+        self.assertEqual(status.get_last_archived_date(default_date),
                          default_date)
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
-    def test_get_progress(self, patched_get):
+    def test_get_last_archived_date(self, patched_get):
         status = scraper.SyncStatus(None, None, None)
         patched_get.return_value = dict(lastsuccessfulcollection='x2010-11-02')
-        high_water_mark = status.get_progress()
-        self.assertEqual(high_water_mark, datetime.date(2010, 11, 2))
+        last_archived_date = status.get_last_archived_date()
+        self.assertEqual(last_archived_date, datetime.date(2010, 11, 2))
 
     @mock.patch.object(scraper.SyncStatus, 'update_data')
-    def test_high_water_mark(self, patched_update):
+    def test_update_last_archived_date(self, patched_update):
         status = scraper.SyncStatus(None, None, None)
-        status.update_high_water_mark(datetime.date(2012, 2, 29))
+        status.update_last_archived_date(datetime.date(2012, 2, 29))
         patched_update.assert_called_once()
         self.assertTrue('x2012-02-29' in patched_update.call_args[0])
 
