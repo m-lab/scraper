@@ -16,7 +16,7 @@
 """Download all new data from an MLab node, then upload what can be uploaded.
 
 This is a library to download data from an MLab node, upload data to
-Google Cloud Storage, and update Cloud Datastore with the results.  Because of
+Google Cloud Storage, and update Cloud Datastore with the status.  Because of
 the vagaries of the discovery API and some command-line options that need to be
 set, the init() function in this library should be the first thing called.
 
@@ -530,8 +530,8 @@ class SyncStatus(object):
 
         Used to determine what local data on a node has been archived and is
         safe to delete, and also what data must be downloaded from a node, and
-        what data need not be downloaded.  It is expected that this quantity
-        will be monotonically increasing.
+        what data need not be downloaded.  Other than exceptional recovery
+        cases, this quantity must must be monotonically increasing.
 
         Args:
           default_date: the date to return if no datastore entry exists
@@ -639,26 +639,27 @@ def init(args):  # pragma: no cover
     return (rsync_url, status, destination, storage_service)
 
 
-def download(rsync_binary, rsync_url, status, destination):  # pragma: no cover
+def download(rsync_binary, rsync_url, sync_status,
+             destination):  # pragma: no cover
     """Rsync download all files that are new enough.
 
     Find the current last_archived_date from cloud datastore, then get the file
     list and download the files from the server.
     """
-    status.update_last_collection()
-    last_archived_date = status.get_last_archived_date()
+    sync_status.update_last_collection()
+    last_archived_date = sync_status.get_last_archived_date()
     all_files = list_rsync_files(rsync_binary, rsync_url)
     newer_files = remove_older_files(last_archived_date, all_files)
     download_files(rsync_binary, rsync_url, newer_files, destination)
 
 
-def upload_if_allowed(args, status, destination,
+def upload_if_allowed(args, sync_status, destination,
                       storage_service):  # pragma: no cover
     """If enough time has passed, upload old data to GCS.
 
-    Tar up what we have for each un-uploaded day that is sufficiently in the
-    past (up to and including the new archive date), upload what we have, and
-    delete the local copies of all successfully-uploaded data.
+    Tar up what we have for each unarchived day that is sufficiently in the past
+    (up to and including the new archive date), upload what we have, and delete
+    the local copies of all successfully-uploaded data.
     """
     candidate_last_archived_date = max_new_archived_date()
     for day in find_all_days_to_upload(destination,
@@ -669,8 +670,8 @@ def upload_if_allowed(args, status, destination,
                 args.rsync_host, args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_host, args.rsync_module, args.bucket)
-        status.update_last_archived_date(day)
+        sync_status.update_last_archived_date(day)
         if max_mtime is not None:
-            status.update_mtime(max_mtime)
+            sync_status.update_mtime(max_mtime)
         remove_datafiles(destination, day)
-    status.update_debug_message('')
+    sync_status.update_debug_message('')
