@@ -1,3 +1,14 @@
+# This file is a template, to be fleshed out by running:
+#    plsyc/mlabconfig.py --scraper_kubernetes \
+#                        --template_yaml=deploy.yml > scraper_deploy.yml
+# The plsync directory and its contents may be found in:
+#    https://github.com/m-lab/operator
+# The template, once filled out, specifies the kubernetes deployment for
+# scraper.  The deployment may be deployed with:
+#    kubectl create -f scraper_deploy.yml
+# If the deployment fails with the error "namespace does not exist", then run
+#    kubectl create -f namespace.yml
+# to create the namespace, and then try the deployment again.
 kind: Deployment
 apiVersion: extensions/v1beta1
 metadata:
@@ -20,16 +31,16 @@ spec:
     spec:
       containers:
         - name: {site}-{node}-{experiment}-{rsync_module}
-          image: gcr.io/mlab-staging/github-pboothe-scraper:test
+          image: gcr.io/mlab-staging/github-pboothe-scraper:ab247f07ca86744d0ac837098c32d3fc8286ef6f
           env:
             - name: RSYNC_MODULE
               value: {rsync_module}
             - name: RSYNC_HOST
               value: {rsync_host}
-            - name: SPREADSHEET
-              value: 143pU25GJidW2KZ_93hgzHdqTqq22wgdxR_3tt3dvrJY
             - name: GCS_BUCKET
               value: mlab-scraper-staging
+            - name: DATASTORE_NAMESPACE
+              value: scraper
           resources:
             requests:
               memory: "20Mi"

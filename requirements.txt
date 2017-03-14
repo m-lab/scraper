@@ -1,3 +1,4 @@
 fasteners
 google-api-python-client
+google-cloud-datastore
 prometheus_client

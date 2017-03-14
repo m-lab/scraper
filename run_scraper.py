@@ -128,12 +128,21 @@ def parse_cmdline(args):
         required=False,
         help='The port on which the rsync server runs (default is 7999)')
     parser.add_argument(
-        '--spreadsheet',
-        metavar='URL',
+        '--datastore_namespace',
+        metavar='NAMESPACE',
         type=str,
-        default='143pU25GJidW2KZ_93hgzHdqTqq22wgdxR_3tt3dvrJY',
-        help='The google doc ID of the spreadsheet used to sync download '
-        'information with the nodes.')
+        default='scraper',
+        help='The cloud datastore namespace to use in the current project. '
+             'Every google cloud project has one datastore associated with '
+             'it. In order for us to run multiple scrapers within the same '
+             'cloud project, we add a "namespace" element to every key. This '
+             'way, independent parallel deployments can use the same datastore '
+             'and not need independent projects.  To run a separate '
+             'independent scraper in the same project, choose a different '
+             'argument for the datastore_namespace. Otherwise, the same '
+             'datastore entries will be being updated by two independent '
+             'scrapers, and then the nodes might delete data before the '
+             'authoritative scraper has successfully scraped it off of them.')
     parser.add_argument(
         '--tar_binary',
         metavar='TAR',
@@ -168,17 +177,17 @@ def parse_cmdline(args):
 def main(argv):  # pragma: no cover
     """Run scraper.py in an infinite loop."""
     args = parse_cmdline(argv[1:])
-    rsync_url, spreadsheet, destination, storage_service = scraper.init(args)
+    rsync_url, status, destination, storage_service = scraper.init(args)
     prometheus_client.start_http_server(args.metrics_port)
     while True:
         try:
             logging.info('Scraping %s', rsync_url)
             with RSYNC_RUNS.time():
-                scraper.download(args.rsync_binary, rsync_url, spreadsheet,
+                scraper.download(args.rsync_binary, rsync_url, status,
                                  destination)
             with UPLOAD_RUNS.time():
-                scraper.upload_if_allowed(args, rsync_url, spreadsheet,
-                                          destination, storage_service)
+                scraper.upload_if_allowed(args, status, destination,
+                                          storage_service)
             # pylint: disable=no-member
             SCRAPER_SUCCESS.labels(message='success').inc()
             # pylint: enable=no-member

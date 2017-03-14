@@ -1,7 +1,7 @@
 FROM google/cloud-sdk
 MAINTAINER Peter Boothe <pboothe@google.com>
 # Install all the standard packages we need
-RUN apt-get update && apt-get install -y python-pip rsync tar
+RUN apt-get update && apt-get install -y rsync tar python-dev python-pip
 # Install all the python requirements
 ADD requirements.txt /requirements.txt
 RUN pip install -r requirements.txt
@@ -18,4 +18,4 @@ CMD /run_scraper.py \
     --rsync_module=$RSYNC_MODULE \
     --bucket=$GCS_BUCKET \
     --data_dir=scraper_data \
-    --spreadsheet=$SPREADSHEET
+    --datastore_namespace=$DATASTORE_NAMESPACE

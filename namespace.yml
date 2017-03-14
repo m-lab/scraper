@@ -1,0 +1,8 @@
+# To create the namespace for the scraper deployment, run
+#    kubectl create -f namespace.yml
+# The namespace should only need to be created once in the lifetime of the
+# cluster.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scraper
