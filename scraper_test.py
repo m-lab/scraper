@@ -18,7 +18,6 @@
 #
 # pylint: disable=missing-docstring, no-self-use, too-many-public-methods
 
-import argparse
 import datetime
 import logging
 import os
@@ -70,12 +69,10 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(args.rsync_port, 7999)
         self.assertEqual(args.max_uncompressed_size, 1000000000)
 
-    # Patching this prevents ArgumentParser from printing anything.  It's
-    # potentially brittle, but the readability gains are worth it.
-    @mock.patch.object(argparse.ArgumentParser, '_print_message')
-    def test_args_help(self, _patched_argparse):
+    def test_args_help(self):
         with self.assertRaises(SystemExit):
-            run_scraper.parse_cmdline(['-h'])
+            with testfixtures.OutputCapture() as _:
+                run_scraper.parse_cmdline(['-h'])
 
     @mock.patch.object(subprocess, 'check_output')
     @testfixtures.log_capture()
