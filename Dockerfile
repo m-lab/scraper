@@ -1,7 +1,7 @@
 FROM google/cloud-sdk
 MAINTAINER Peter Boothe <pboothe@google.com>
 # Install all the standard packages we need
-RUN apt-get update && apt-get install -y rsync tar python-dev python-pip
+RUN apt-get update && apt-get install -y rsync tar python-dev python-pip nocache
 # Install all the python requirements
 ADD requirements.txt /requirements.txt
 RUN pip install -r requirements.txt
@@ -13,7 +13,7 @@ RUN chmod +x run_scraper.py
 # The monitoring port
 EXPOSE 9090
 # All daemons must be started here, along with the job they support.
-CMD /run_scraper.py \
+CMD nocache /run_scraper.py \
     --rsync_host=$RSYNC_HOST \
     --rsync_module=$RSYNC_MODULE \
     --bucket=$GCS_BUCKET \
