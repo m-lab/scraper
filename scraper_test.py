@@ -163,7 +163,8 @@ BADBADBAD
     @testfixtures.log_capture()
     def test_download_files_fails_and_dies(self, log):
         with self.assertRaises(SystemExit):
-            scraper.download_files('/bin/false', 'localhost/',
+            scraper.download_files('/usr/bin/nocache', '/bin/false',
+                                   'localhost/',
                                    ['2016/10/26/DNE1', '2016/10/26/DNE2'],
                                    '/tmp')
         self.assertIn('ERROR', [x.levelname for x in log.records])
@@ -171,7 +172,8 @@ BADBADBAD
     @testfixtures.log_capture()
     def test_download_files_with_empty_does_nothing(self, log):
         # If the next line doesn't raise SystemExit then the test passes
-        scraper.download_files('/bin/false', 'localhost/', [], '/tmp')
+        scraper.download_files('/usr/bin/nocache', '/bin/false', 'localhost/',
+                               [], '/tmp')
         self.assertIn('WARNING', [x.levelname for x in log.records])
 
     @mock.patch.object(subprocess, 'check_call')
@@ -180,10 +182,10 @@ BADBADBAD
 
         def verify_contents(args):
             self.assertEqual(files,
-                             [x.strip() for x in file(args[2]).readlines()])
+                             [x.strip() for x in file(args[-3]).readlines()])
 
         patched_check_call.side_effect = verify_contents
-        scraper.download_files('/bin/true', 'localhost/',
+        scraper.download_files('/usr/bin/nocache', '/bin/true', 'localhost/',
                                ['2016/10/26/DNE1', '2016/10/26/DNE2'], '/tmp')
         self.assertTrue(patched_check_call.called)
         self.assertEqual(patched_check_call.call_count, 1)
@@ -280,7 +282,7 @@ BADBADBAD
                 file('2016/01/28/test1.txt', 'w').write('hello')
                 file('2016/01/28/test2.txt', 'w').write('goodbye')
                 scraper.create_tarfile(
-                    '/bin/tar', 'test.tgz',
+                    '/usr/bin/nocache', '/bin/tar', 'test.tgz',
                     ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
                 shutil.rmtree('2016')
                 self.assertFalse(os.path.exists('2016'))
@@ -304,7 +306,7 @@ BADBADBAD
                 self.assertEqual(file('test.tgz').read(), 'in the way')
                 with self.assertRaises(SystemExit):
                     scraper.create_tarfile(
-                        '/bin/tar', 'test.tgz',
+                        '/usr/bin/nocache', '/bin/tar', 'test.tgz',
                         ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
         finally:
             shutil.rmtree(temp_d)
@@ -320,7 +322,7 @@ BADBADBAD
                 file('2016/01/28/test2.txt', 'w').write('goodbye')
                 with self.assertRaises(SystemExit):
                     scraper.create_tarfile(
-                        '/bin/false', 'test.tgz',
+                        '/usr/bin/nocache', '/bin/false', 'test.tgz',
                         ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
         finally:
             shutil.rmtree(temp_d)
@@ -337,7 +339,7 @@ BADBADBAD
                 with self.assertRaises(SystemExit):
                     # Executes successfully, but fails to create the tarfile.
                     scraper.create_tarfile(
-                        '/bin/true', 'test.tgz',
+                        '/usr/bin/nocache', '/bin/true', 'test.tgz',
                         ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
         finally:
             shutil.rmtree(temp_d)
@@ -356,13 +358,14 @@ BADBADBAD
                     self.assertFalse(os.path.exists('test3.txt'))
                     self.assertTrue(os.path.exists('test3.txt.gz'))
             files = [f for f, _t in scraper.create_temporary_tarfiles(
-                '/bin/tar', '/bin/gunzip', temp_d, datetime.date(2016, 1, 28),
-                'mlab9.dne04.measurement-lab.org', 'exper', 100000)]
+                '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', temp_d,
+                datetime.date(2016, 1, 28), 'mlab9.dne04.measurement-lab.org',
+                'exper', 100000)]
             self.assertEqual(files,
                              ['20160128T000000Z-mlab9-dne04-exper-0000.tgz'])
             with scraper.chdir(temp_d):
                 gen = scraper.create_temporary_tarfiles(
-                    '/bin/tar', '/bin/gunzip', temp_d,
+                    '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', temp_d,
                     datetime.date(2016, 1, 28),
                     'mlab9.dne04.measurement-lab.org', 'exper', 100000)
                 fname, _ = gen.next()
@@ -394,15 +397,16 @@ BADBADBAD
             # By setting the max filesize as 4 bytes, we will end up creating a
             # separate tarfile for each test file.
             files = [f for f, _t in scraper.create_temporary_tarfiles(
-                '/bin/tar', '/bin/gunzip', temp_d, datetime.date(2016, 1, 28),
-                'mlab9.dne04.measurement-lab.org', 'exper', 4)]
+                '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', temp_d,
+                datetime.date(2016, 1, 28), 'mlab9.dne04.measurement-lab.org',
+                'exper', 4)]
             self.assertEqual(files, [
                 '20160128T000000Z-mlab9-dne04-exper-0000.tgz',
                 '20160128T000000Z-mlab9-dne04-exper-0001.tgz'
             ])
             with scraper.chdir(temp_d):
                 gen = scraper.create_temporary_tarfiles(
-                    '/bin/tar', '/bin/gunzip', temp_d,
+                    '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', temp_d,
                     datetime.date(2016, 1, 28),
                     'mlab9.dne04.measurement-lab.org', 'exper', 4)
                 gen.next()
@@ -436,17 +440,16 @@ BADBADBAD
         self.assertEqual(client.get.call_count, 2)
 
     @testfixtures.log_capture()
-    def test_get_data_robustness(self, log):
+    def test_get_data_robustness(self, _log):
         client = mock.Mock()
         client.key.return_value = {}
         client.get.side_effect = [
             scraper.cloud_exceptions.ServiceUnavailable('one failure'), {}]
         status = scraper.SyncStatus(client, None, None)
         status.get_data()
-        self.assertIn('WARNING', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
-    def test_get_data_fails_eventually(self, log):
+    def test_get_data_fails_eventually(self, _log):
         client = mock.Mock()
         client.key.return_value = {}
         client.get.side_effect = scraper.cloud_exceptions.ServiceUnavailable(
@@ -454,8 +457,6 @@ BADBADBAD
         status = scraper.SyncStatus(client, None, None)
         with self.assertRaises(scraper.cloud_exceptions.ServiceUnavailable):
             status.get_data()
-        self.assertIn('WARNING', [x.levelname for x in log.records])
-        self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
     def test_get_last_archived_date_from_status_default(self, patched_get):
@@ -511,17 +512,16 @@ BADBADBAD
         client.put.assert_called_once()
 
     @testfixtures.log_capture()
-    def test_update_data_robustness(self, log):
+    def test_update_data_robustness(self, _log):
         client = mock.Mock()
         client.get.return_value = None
         client.put.side_effect = [
             scraper.cloud_exceptions.ServiceUnavailable('one failure'), None]
         status = scraper.SyncStatus(client, None, None)
         status.update_data('key', 'value')
-        self.assertIn('WARNING', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
-    def test_update_data_eventually_fails(self, log):
+    def test_update_data_eventually_fails(self, _log):
         client = mock.Mock()
         client.get.return_value = None
         client.put.side_effect = scraper.cloud_exceptions.ServiceUnavailable(
@@ -529,8 +529,6 @@ BADBADBAD
         status = scraper.SyncStatus(client, None, None)
         with self.assertRaises(scraper.cloud_exceptions.ServiceUnavailable):
             status.update_data('key', 'value')
-        self.assertIn('WARNING', [x.levelname for x in log.records])
-        self.assertIn('ERROR', [x.levelname for x in log.records])
 
     def test_remove_datafiles_all_finished(self):
         try:
@@ -614,7 +612,8 @@ BADBADBAD
                 self.assertFalse(os.path.exists('test'))
                 self.assertEqual(
                     'test',
-                    scraper.attempt_decompression('/bin/gunzip', 'test.gz'))
+                    scraper.attempt_decompression('/usr/bin/nocache',
+                                                  '/bin/gunzip', 'test.gz'))
                 self.assertFalse(os.path.exists('test.gz'))
                 self.assertTrue(os.path.exists('test'))
         finally:
@@ -631,7 +630,8 @@ BADBADBAD
                 self.assertFalse(os.path.exists('test'))
                 self.assertEqual(
                     'test.gz',
-                    scraper.attempt_decompression('/bin/false', 'test.gz'))
+                    scraper.attempt_decompression('/usr/bin/nocache',
+                                                  '/bin/false', 'test.gz'))
         finally:
             shutil.rmtree(temp_d)
         self.assertIn('ERROR', [x.levelname for x in log.records])
@@ -647,7 +647,8 @@ BADBADBAD
                 self.assertFalse(os.path.exists('test'))
                 self.assertEqual(
                     'test.gz',
-                    scraper.attempt_decompression('/bin/true', 'test.gz'))
+                    scraper.attempt_decompression('/usr/bin/nocache',
+                                                  '/bin/true', 'test.gz'))
         finally:
             shutil.rmtree(temp_d)
         self.assertIn('ERROR', [x.levelname for x in log.records])
@@ -664,7 +665,8 @@ BADBADBAD
                 self.assertTrue(os.path.exists('test'))
                 self.assertEqual(
                     'test',
-                    scraper.attempt_decompression('/bin/gunzip', 'test.gz'))
+                    scraper.attempt_decompression('/usr/bin/nocache',
+                                                  '/bin/gunzip', 'test.gz'))
                 self.assertTrue(os.path.exists('test.gz'))
                 self.assertTrue(os.path.exists('test'))
         finally:

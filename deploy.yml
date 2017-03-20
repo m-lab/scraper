@@ -38,7 +38,7 @@ spec:
             - name: RSYNC_HOST
               value: {rsync_host}
             - name: GCS_BUCKET
-              value: mlab-scraper-sandbox
+              value: scraper-mlab-sandbox
             - name: DATASTORE_NAMESPACE
               value: scraper
           resources:

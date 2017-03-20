@@ -36,6 +36,7 @@ import tempfile
 
 import apiclient
 import prometheus_client
+import retry
 
 from oauth2client.contrib import gce
 # pylint: disable=no-name-in-module, import-error
@@ -96,8 +97,8 @@ def list_rsync_files(rsync_binary, rsync_url):
     """
     try:
         logging.info('rsync file list discovery from %s', rsync_url)
-        command = [rsync_binary, '--list-only', '--recursive'] + \
-            RSYNC_ARGS + [rsync_url]
+        command = ([rsync_binary, '--list-only', '--recursive'] + RSYNC_ARGS +
+                   [rsync_url])
         logging.info('Listing files on server with the command: %s',
                      ' '.join(command))
         lines = subprocess.check_output(command).splitlines()
@@ -150,7 +151,7 @@ def remove_older_files(date, files):
                             verr)
 
 
-def download_files(rsync_binary, rsync_url, files, destination):
+def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
     """Downloads the files from the server.
 
     The filenames may not be safe for shell interpretation, so make sure
@@ -158,6 +159,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
     the download, exit.
 
     Args:
+      nocache_binary: The full path to `nocache`
       rsync_binary: The full path to `rsync`
       rsync_url: The url from which to retrieve the files
       files: an iterable of filenames to retrieve
@@ -177,8 +179,8 @@ def download_files(rsync_binary, rsync_url, files, destination):
         # Download all the files.
         try:
             logging.info('Synching %d files', len(files))
-            command = ([rsync_binary, '--files-from', temp.name] + RSYNC_ARGS +
-                       [rsync_url, destination])
+            command = ([nocache_binary, rsync_binary] + RSYNC_ARGS +
+                       ['--files-from', temp.name, rsync_url, destination])
             subprocess.check_call(command)
         except subprocess.CalledProcessError as error:
             logging.error('rsync download failed: %s', str(error))
@@ -260,10 +262,11 @@ def chdir(directory):
         os.chdir(cwd)
 
 
-def create_tarfile(tar_binary, tarfile_name, component_files):
+def create_tarfile(nocache_binary, tar_binary, tarfile_name, component_files):
     """Creates a tarfile in the current directory.
 
     Args:
+      nocache_binary: the full path to the nocache binary
       tar_binary: the full path to the tar binary
       tarfile_name: the name of the tarfile to create, including extension
       component_files: a list of filenames to put in that tarfile
@@ -276,7 +279,8 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
                       'creation of another file of the same name',
                       os.getcwd(), tarfile_name)
         sys.exit(1)
-    command = [tar_binary, 'cfz', tarfile_name] + component_files
+    command = ([nocache_binary, tar_binary, 'cfz', tarfile_name] +
+               component_files)
     try:
         subprocess.check_call(command)
     except subprocess.CalledProcessError as error:
@@ -303,7 +307,7 @@ def node_and_site(host):
     return (names[-4], names[-3])
 
 
-def attempt_decompression(gunzip_binary, filename):
+def attempt_decompression(nocache_binary, gunzip_binary, filename):
     """Attempt to decompress a .gz file.
 
     If the attempt fails, return the original filename. Otherwise return the new
@@ -316,7 +320,7 @@ def attempt_decompression(gunzip_binary, filename):
             'Assuming that already-existing file %s is the unzipped '
             'version of %s', basename, filename)
         return basename
-    command = [gunzip_binary, filename]
+    command = [nocache_binary, gunzip_binary, filename]
     try:
         subprocess.check_call(command)
     except subprocess.CalledProcessError as error:
@@ -329,8 +333,9 @@ def attempt_decompression(gunzip_binary, filename):
     return basename
 
 
-def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
-                              experiment, max_uncompressed_size):
+def create_temporary_tarfiles(nocache_binary, tar_binary, gunzip_binary,
+                              directory, day, host, experiment,
+                              max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
 
     Because one day may contain a lot of data, we create a series of tarfiles,
@@ -338,6 +343,7 @@ def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
     Upon resumption, remove the tarfile that was created.
 
     Args:
+      nocache_binary: the full pathname for the nocache binary
       tar_binary: the full pathname for the tar binary
       directory: the directory at the root of the file hierarchy
       day: the date for the tarfile
@@ -367,7 +373,8 @@ def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
             # Stop with this compression and decompression nonsense by deleting
             # all code between this comment and the one that says "END TODO"
             if filename.endswith('.gz'):
-                filename = attempt_decompression(gunzip_binary, filename)
+                filename = attempt_decompression(nocache_binary, gunzip_binary,
+                                                 filename)
             # END TODO(https://github.com/m-lab/scraper/issues/7)
             filestat = os.stat(filename)
             filesize = filestat.st_size
@@ -377,7 +384,8 @@ def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
                 tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                              filename_suffix)
                 try:
-                    create_tarfile(tar_binary, tarfile_name, tarfile_files)
+                    create_tarfile(nocache_binary, tar_binary, tarfile_name,
+                                   tarfile_files)
                     logging.info('Created local file %s', tarfile_name)
                     yield tarfile_name, max_mtime
                 finally:
@@ -392,7 +400,8 @@ def create_temporary_tarfiles(tar_binary, gunzip_binary, directory, day, host,
             tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                          filename_suffix)
             try:
-                create_tarfile(tar_binary, tarfile_name, tarfile_files)
+                create_tarfile(nocache_binary, tar_binary, tarfile_name,
+                               tarfile_files)
                 logging.info('Created local file %s', tarfile_name)
                 yield tarfile_name, max_mtime
             finally:
@@ -517,6 +526,10 @@ class SyncStatus(object):
         self._key = None
         self._entity = None
 
+    # Retry logic required until
+    # https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2694
+    # is fixed.
+    @retry.retry(cloud_exceptions.ServiceUnavailable, tries=5)
     def get_data(self):
         """Retrieves data from cloud datastore.
 
@@ -525,19 +538,7 @@ class SyncStatus(object):
         if self._key is None:
             self._key = self._client.key('namespace', self._namespace,
                                          'rsync_url', self._rsync_url)
-        # Retry logic required until
-        # https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2694
-        # is fixed.
-        retries = 5
-        while True:
-            try:
-                return self._client.get(self._key)
-            except cloud_exceptions.ServiceUnavailable:
-                logging.warning('Datastore was briefly unavailable')
-                retries -= 1
-                if retries <= 0:
-                    logging.error('Datastore permanently unavailable')
-                    raise
+        return self._client.get(self._key)
 
     def get_last_archived_date(self, default_date=datetime.date(2009, 1, 1)):
         """Returns the most recent date from which we have all the data.
@@ -562,6 +563,10 @@ class SyncStatus(object):
         else:
             return xdate_to_date_or_die(value[SyncStatus.COLLECTION_KEY])
 
+    # Retry logic required until
+    # https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2694
+    # is fixed.
+    @retry.retry(cloud_exceptions.ServiceUnavailable, tries=5)
     def update_data(self, entry_key, entry_value):
         """Updates a datastore value.
 
@@ -577,20 +582,7 @@ class SyncStatus(object):
                          self._rsync_url)
             value = cloud_datastore.entity.Entity(key=self._key)
         value[entry_key] = entry_value
-        # Retry logic required until
-        # https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2694
-        # is fixed.
-        retries = 5
-        while True:
-            try:
-                self._client.put(value)
-                return
-            except cloud_exceptions.ServiceUnavailable:
-                logging.warning('Datastore was briefly unavailable')
-                retries -= 1
-                if retries <= 0:
-                    logging.error('Datastore permanently unavailable')
-                    raise
+        self._client.put(value)
 
     def update_last_archived_date(self, date):
         """Updates the date before which it is safe to delete data."""
@@ -663,11 +655,13 @@ def init(args):  # pragma: no cover
                                args.rsync_module)
     if not os.path.isdir(destination):
         os.makedirs(destination)
+    # TODO(https://github.com/m-lab/scraper/issues/20): create a "binaries" or
+    # "constants" object to pass around instead of the strings for the full path
+    # of the binaries to execute.
     return (rsync_url, status, destination, storage_service)
 
 
-def download(rsync_binary, rsync_url, sync_status,
-             destination):  # pragma: no cover
+def download(args, rsync_url, sync_status, destination):  # pragma: no cover
     """Rsync download all files that are new enough.
 
     Find the current last_archived_date from cloud datastore, then get the file
@@ -675,9 +669,10 @@ def download(rsync_binary, rsync_url, sync_status,
     """
     sync_status.update_last_collection()
     last_archived_date = sync_status.get_last_archived_date()
-    all_files = list_rsync_files(rsync_binary, rsync_url)
+    all_files = list_rsync_files(args.rsync_binary, rsync_url)
     newer_files = remove_older_files(last_archived_date, all_files)
-    download_files(rsync_binary, rsync_url, newer_files, destination)
+    download_files(args.nocache_binary, args.rsync_binary, rsync_url,
+                   newer_files, destination)
 
 
 def upload_if_allowed(args, sync_status, destination,
@@ -693,8 +688,9 @@ def upload_if_allowed(args, sync_status, destination,
                                        candidate_last_archived_date):
         max_mtime = None
         for tgz_filename, max_mtime in create_temporary_tarfiles(
-                args.tar_binary, args.gunzip_binary, destination, day,
-                args.rsync_host, args.rsync_module, args.max_uncompressed_size):
+                args.nocache_binary, args.tar_binary, args.gunzip_binary,
+                destination, day, args.rsync_host, args.rsync_module,
+                args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_host, args.rsync_module, args.bucket)
         sync_status.update_last_archived_date(day)
