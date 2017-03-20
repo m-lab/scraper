@@ -10,9 +10,6 @@ ADD scraper.py /scraper.py
 RUN chmod +x /scraper.py
 ADD run_scraper.py /run_scraper.py
 RUN chmod +x run_scraper.py
-ADD scraper_test.py /scraper_test.py
-ADD test-requirements.txt /test-requirements.txt
-RUN pip install -r test-requirements.txt
 # The monitoring port
 EXPOSE 9090
 # All daemons must be started here, along with the job they support.

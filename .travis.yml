@@ -2,8 +2,10 @@ language: python
 cache: pip
 python: "2.7"
 sudo: required
+before_install:
+  - sudo apt-get -qq update
+  - sudo apt-get install -y nocache
 install:
-  - apt-get install -y nocache
   - pip install -r requirements.txt
   - pip install -r test-requirements.txt
   - pip install coveralls
