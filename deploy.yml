@@ -43,5 +43,5 @@ spec:
               value: scraper
           resources:
             requests:
-              memory: "20Mi"
+              memory: "100Mi"
               cpu: "20m"
