@@ -435,6 +435,28 @@ BADBADBAD
         self.assertEqual(client.key.call_count, 1)
         self.assertEqual(client.get.call_count, 2)
 
+    @testfixtures.log_capture()
+    def test_get_data_robustness(self, log):
+        client = mock.Mock()
+        client.key.return_value = {}
+        client.get.side_effect = [
+            scraper.cloud_exceptions.ServiceUnavailable('one failure'), {}]
+        status = scraper.SyncStatus(client, None, None)
+        status.get_data()
+        self.assertIn('WARNING', [x.levelname for x in log.records])
+
+    @testfixtures.log_capture()
+    def test_get_data_fails_eventually(self, log):
+        client = mock.Mock()
+        client.key.return_value = {}
+        client.get.side_effect = scraper.cloud_exceptions.ServiceUnavailable(
+            'permanent failure')
+        status = scraper.SyncStatus(client, None, None)
+        with self.assertRaises(scraper.cloud_exceptions.ServiceUnavailable):
+            status.get_data()
+        self.assertIn('WARNING', [x.levelname for x in log.records])
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+
     @mock.patch.object(scraper.SyncStatus, 'get_data')
     def test_get_last_archived_date_from_status_default(self, patched_get):
         patched_get.return_value = None
@@ -487,6 +509,28 @@ BADBADBAD
         status = scraper.SyncStatus(client, None, None)
         status.update_data('key', 'value')
         client.put.assert_called_once()
+
+    @testfixtures.log_capture()
+    def test_update_data_robustness(self, log):
+        client = mock.Mock()
+        client.get.return_value = None
+        client.put.side_effect = [
+            scraper.cloud_exceptions.ServiceUnavailable('one failure'), None]
+        status = scraper.SyncStatus(client, None, None)
+        status.update_data('key', 'value')
+        self.assertIn('WARNING', [x.levelname for x in log.records])
+
+    @testfixtures.log_capture()
+    def test_update_data_eventually_fails(self, log):
+        client = mock.Mock()
+        client.get.return_value = None
+        client.put.side_effect = scraper.cloud_exceptions.ServiceUnavailable(
+            'permanent failure')
+        status = scraper.SyncStatus(client, None, None)
+        with self.assertRaises(scraper.cloud_exceptions.ServiceUnavailable):
+            status.update_data('key', 'value')
+        self.assertIn('WARNING', [x.levelname for x in log.records])
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
     def test_remove_datafiles_all_finished(self):
         try:
@@ -633,6 +677,7 @@ BADBADBAD
         # the python compiler.  Then, in order to not trigger the "unused
         # import" linter message, we should verify something about run_scraper.
         self.assertIsNotNone(run_scraper.__doc__)
+
 
 if __name__ == '__main__':  # pragma: no cover
     unittest.main()

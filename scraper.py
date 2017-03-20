@@ -39,8 +39,10 @@ import prometheus_client
 
 from oauth2client.contrib import gce
 # pylint: disable=no-name-in-module, import-error
-# google.cloud seems to confuse pylint
-from google.cloud import datastore
+# google.cloud seems to confuse pylint, so importing in this way will avoid
+# later pylint complaints.
+import google.cloud.datastore as cloud_datastore
+import google.cloud.exceptions as cloud_exceptions
 # pylint: enable=no-name-in-module, import-error
 
 
@@ -523,7 +525,19 @@ class SyncStatus(object):
         if self._key is None:
             self._key = self._client.key('namespace', self._namespace,
                                          'rsync_url', self._rsync_url)
-        return self._client.get(self._key)
+        # Retry logic required until
+        # https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2694
+        # is fixed.
+        retries = 5
+        while True:
+            try:
+                return self._client.get(self._key)
+            except cloud_exceptions.ServiceUnavailable:
+                logging.warning('Datastore was briefly unavailable')
+                retries -= 1
+                if retries <= 0:
+                    logging.error('Datastore permanently unavailable')
+                    raise
 
     def get_last_archived_date(self, default_date=datetime.date(2009, 1, 1)):
         """Returns the most recent date from which we have all the data.
@@ -561,9 +575,22 @@ class SyncStatus(object):
         if not value:
             logging.info('Key %s has no value. Making a new one.',
                          self._rsync_url)
-            value = datastore.entity.Entity(key=self._key)
+            value = cloud_datastore.entity.Entity(key=self._key)
         value[entry_key] = entry_value
-        self._client.put(value)
+        # Retry logic required until
+        # https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2694
+        # is fixed.
+        retries = 5
+        while True:
+            try:
+                self._client.put(value)
+                return
+            except cloud_exceptions.ServiceUnavailable:
+                logging.warning('Datastore was briefly unavailable')
+                retries -= 1
+                if retries <= 0:
+                    logging.error('Datastore permanently unavailable')
+                    raise
 
     def update_last_archived_date(self, date):
         """Updates the date before which it is safe to delete data."""
@@ -623,7 +650,7 @@ def init(args):  # pragma: no cover
     creds = gce.AppAssertionCredentials()
 
     # Set up cloud datastore and its dependencies
-    datastore_service = datastore.Client()
+    datastore_service = cloud_datastore.Client()
     status = SyncStatus(datastore_service, rsync_url, args.datastore_namespace)
     logging.getLogger().addHandler(SyncStatusLogHandler(status))
 
