@@ -181,14 +181,17 @@ BADBADBAD
         files = ['2016/10/26/DNE1', '2016/10/26/DNE2']
 
         def verify_contents(args):
+            # Verify that the third-to-last argument to check_call is a filename
+            # that contains the right data (specifically, the filenames).  This
+            # test needs to be kept in sync with the order of command-line
+            # arguments passed to the rsync call.
             self.assertEqual(files,
                              [x.strip() for x in file(args[-3]).readlines()])
 
         patched_check_call.side_effect = verify_contents
         scraper.download_files('/usr/bin/nocache', '/bin/true', 'localhost/',
                                ['2016/10/26/DNE1', '2016/10/26/DNE2'], '/tmp')
-        self.assertTrue(patched_check_call.called)
-        self.assertEqual(patched_check_call.call_count, 1)
+        patched_check_call.assert_called_once()
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     def test_new_archived_date_after_8am(self):
