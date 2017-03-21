@@ -171,6 +171,12 @@ def parse_cmdline(args):
         type=str,
         default='mlab-storage-scraper-test',
         help='The Google Cloud Storage bucket to upload to')
+    parser.add_argument(
+        '--nocache_binary',
+        metavar='NOCACHE',
+        type=str,
+        default='/usr/bin/nocache',
+        help='The location of the nocache binary')
     return parser.parse_args(args)
 
 
@@ -183,8 +189,7 @@ def main(argv):  # pragma: no cover
         try:
             logging.info('Scraping %s', rsync_url)
             with RSYNC_RUNS.time():
-                scraper.download(args.rsync_binary, rsync_url, status,
-                                 destination)
+                scraper.download(args, rsync_url, status, destination)
             with UPLOAD_RUNS.time():
                 scraper.upload_if_allowed(args, status, destination,
                                           storage_service)
