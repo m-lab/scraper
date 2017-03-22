@@ -170,11 +170,10 @@ BADBADBAD
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
-    def test_download_files_with_empty_does_nothing(self, log):
+    def test_download_files_with_empty_does_nothing(self, _log):
         # If the next line doesn't raise SystemExit then the test passes
         scraper.download_files('/usr/bin/nocache', '/bin/false', 'localhost/',
                                [], '/tmp')
-        self.assertIn('WARNING', [x.levelname for x in log.records])
 
     @mock.patch.object(subprocess, 'check_call')
     def test_download_files(self, patched_check_call):

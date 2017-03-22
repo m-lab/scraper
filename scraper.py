@@ -172,7 +172,7 @@ def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
     """
     files = list(files)
     if len(files) == 0:
-        logging.warning('No files to be downloaded from %s', rsync_url)
+        logging.info('No files to be downloaded from %s', rsync_url)
         return
     # Rsync all the files passed in
     for start in range(0, len(files), FILES_PER_RSYNC_DOWNLOAD):
