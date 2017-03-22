@@ -151,6 +151,11 @@ def remove_older_files(date, files):
                             verr)
 
 
+# Download files 1000 at a time to help keep rsync memory usage low.
+#    https://rsync.samba.org/FAQ.html#5
+FILES_PER_RSYNC_DOWNLOAD = 1000
+
+
 def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
     """Downloads the files from the server.
 
@@ -166,26 +171,28 @@ def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
       destination: the directory on the local host to put the files
     """
     files = list(files)
-    # Rsync all the files that are new enough for us to care about.
-    with tempfile.NamedTemporaryFile() as temp:
-        # Write the list of files to a tempfile, so as not to have to worry
-        # about too-long command lines full of filenames.
-        for fname in files:
-            print >> temp, fname
-        temp.flush()
-        if os.stat(temp.name).st_size == 0:
-            logging.warning('No files to be downloaded from %s', rsync_url)
-            return
-        # Download all the files.
-        try:
-            logging.info('Synching %d files', len(files))
-            command = ([nocache_binary, rsync_binary] + RSYNC_ARGS +
-                       ['--files-from', temp.name, rsync_url, destination])
-            subprocess.check_call(command)
-        except subprocess.CalledProcessError as error:
-            logging.error('rsync download failed: %s', str(error))
-            sys.exit(1)
-        logging.info('sync completed successfully from %s', rsync_url)
+    if len(files) == 0:
+        logging.warning('No files to be downloaded from %s', rsync_url)
+        return
+    # Rsync all the files passed in
+    for start in range(0, len(files), FILES_PER_RSYNC_DOWNLOAD):
+        filenames = files[start:start + FILES_PER_RSYNC_DOWNLOAD]
+        with tempfile.NamedTemporaryFile() as temp:
+            # Write the list of files to a tempfile, so as not to have to worry
+            # about too-long command lines full of filenames.
+            temp.write('\0'.join(filenames))
+            temp.flush()
+            # Download all the files.
+            try:
+                logging.info('Synching %d files', len(filenames))
+                command = ([nocache_binary, rsync_binary] + RSYNC_ARGS +
+                           ['-from0', '--files-from', temp.name, rsync_url,
+                            destination])
+                subprocess.check_call(command)
+            except subprocess.CalledProcessError as error:
+                logging.error('rsync download failed: %s', str(error))
+                sys.exit(1)
+    logging.info('sync completed successfully from %s', rsync_url)
 
 
 def max_new_archived_date():

@@ -178,20 +178,43 @@ BADBADBAD
 
     @mock.patch.object(subprocess, 'check_call')
     def test_download_files(self, patched_check_call):
-        files = ['2016/10/26/DNE1', '2016/10/26/DNE2']
+        files_to_download = ['2016/10/26/DNE1', '2016/10/26/DNE2']
 
         def verify_contents(args):
             # Verify that the third-to-last argument to check_call is a filename
             # that contains the right data (specifically, the filenames).  This
             # test needs to be kept in sync with the order of command-line
             # arguments passed to the rsync call.
-            self.assertEqual(files,
-                             [x.strip() for x in file(args[-3]).readlines()])
+            file_with_filenames = args[-3]
+            files_downloaded = file(file_with_filenames).read().split('\0')
+            self.assertEqual(files_to_download, files_downloaded)
 
         patched_check_call.side_effect = verify_contents
         scraper.download_files('/usr/bin/nocache', '/bin/true', 'localhost/',
-                               ['2016/10/26/DNE1', '2016/10/26/DNE2'], '/tmp')
+                               files_to_download, '/tmp')
         patched_check_call.assert_called_once()
+
+    @mock.patch.object(subprocess, 'check_call')
+    def test_download_files_breaks_up_long_file_list(self, patched_check_call):
+        files_to_download = ['2016/10/26/DNE.%d' % i for i in range(100070)]
+        files_downloaded = []
+
+        def verify_contents(args):
+            # Verify that the third-to-last argument to check_call is a filename
+            # that contains the right data (specifically, the filenames).  This
+            # test needs to be kept in sync with the order of command-line
+            # arguments passed to the rsync call.
+            file_with_filenames = args[-3]
+            files = file(file_with_filenames).read().split('\0')
+            self.assertTrue(len(files) > 0)
+            self.assertTrue(len(files) <= 1000)
+            files_downloaded.extend(files)
+
+        patched_check_call.side_effect = verify_contents
+        scraper.download_files('/usr/bin/nocache', '/bin/true', 'localhost/',
+                               files_to_download, '/tmp')
+        self.assertEqual(set(files_to_download), set(files_downloaded))
+        self.assertEqual(patched_check_call.call_count, 101)
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     def test_new_archived_date_after_8am(self):
