@@ -33,7 +33,7 @@ spec:
     spec:
       containers:
         - name: {{site}}-{{node}}-{{experiment}}-{{rsync_module}}
-          image: gcr.io/mlab-sandbox/github-pboothe-scraper-fix-mem-pressure:a100a65390d89c27540c5959511227d2d67d0215
+          image: gcr.io/mlab-sandbox/github-pboothe-scraper-breakup-rsync:7a81bf4f8b991df75040f1c6dc3942944bffbb1b
           env:
             - name: RSYNC_MODULE
               value: {{rsync_module}}
@@ -46,4 +46,4 @@ spec:
           resources:
             requests:
               memory: "100Mi"
-              cpu: "20m"
+              cpu: "30m"
