@@ -593,17 +593,17 @@ class SyncStatus(object):
 
     def update_last_archived_date(self, date):
         """Updates the date before which it is safe to delete data."""
-        date_str = 'x%d-%02d-%02d' % (date.year, date.month, date.day)
+        date_str = u'x%d-%02d-%02d' % (date.year, date.month, date.day)
         self.update_data(self.COLLECTION_KEY, date_str)
 
     def update_debug_message(self, message):
         """Updates the debug message in cloud datastore."""
-        self.update_data(self.DEBUG_MESSAGE_KEY, message)
+        self.update_data(self.DEBUG_MESSAGE_KEY, unicode(message, 'UTF-8'))
 
     def update_last_collection(self):
         """Updates the last collection time in cloud datastore."""
         text = datetime.datetime.utcnow().strftime('x%Y-%02m-%02d-%02H:%02M')
-        self.update_data(self.LAST_COLLECTION_KEY, text)
+        self.update_data(self.LAST_COLLECTION_KEY, unicode(text, 'UTF-8'))
 
     def update_mtime(self, mtime):
         """Updates the mtime column in cloud datastore."""
