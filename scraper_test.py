@@ -527,7 +527,9 @@ BADBADBAD
         status = scraper.SyncStatus(None, None, None)
         status.update_last_archived_date(datetime.date(2012, 2, 29))
         patched_update.assert_called_once()
-        self.assertTrue('x2012-02-29' in patched_update.call_args[0])
+        self.assertTrue(u'x2012-02-29' in patched_update.call_args[0])
+        index = patched_update.call_args[0].index(u'x2012-02-29')
+        self.assertEqual(type(patched_update.call_args[0][index]), unicode)
 
     def test_update_data_no_value(self):
         client = mock.Mock()
@@ -598,6 +600,8 @@ BADBADBAD
         status.update_debug_message('msg')
         patched_update_data.assert_called_once_with(
             'errorsincelastsuccessful', 'msg')
+        self.assertEqual(type(patched_update_data.call_args[0][1]),
+                         unicode)
 
     @freezegun.freeze_time('2016-01-28 07:43:16 UTC')
     @mock.patch.object(scraper.SyncStatus, 'update_data')
@@ -606,6 +610,8 @@ BADBADBAD
         status.update_last_collection()
         patched_update_data.assert_called_once_with('lastcollectionattempt',
                                                     'x2016-01-28-07:43')
+        self.assertEqual(type(patched_update_data.call_args[0][1]),
+                         unicode)
 
     @mock.patch.object(scraper.SyncStatus, 'update_data')
     def test_update_mtime(self, patched_update_data):
@@ -626,6 +632,8 @@ BADBADBAD
         patched_update_data.assert_not_called()
         logger.error('BADNESS')
         patched_update_data.assert_called_once()
+        self.assertEqual(type(patched_update_data.call_args[0][1]),
+                         unicode)
 
     def test_attempt_decompression(self):
         try:
