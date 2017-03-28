@@ -16,10 +16,11 @@
 # No docstrings required for tests.
 # Tests need to be methods of classes to aid in organization of tests. Using
 #   the 'self' variable is not required.
-# Too many public methods here means "too many tests", which is unlikely.
+# Too many public methods here means "many tests", which is good not bad.
 # This code is in a subdirectory, but is intended to stand alone, so it uses
-#   relative imports.
-# pylint: disable=missing-docstring, no-self-use, too-many-public-methods, relative-import
+#   what look like relative imports to the linter
+# pylint: disable=missing-docstring, no-self-use, too-many-public-methods
+# pylint: disable=relative-import
 
 import unittest
 

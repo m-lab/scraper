@@ -36,10 +36,21 @@ apis, you could use the following command line:
 """
 
 import argparse
-import sys
+import BaseHTTPServer
 import logging
+import random
+import SocketServer
+import sys
+import textwrap
+import thread
+import time
 
-# pylint: disable=duplicate-code
+# pylint: disable=no-name-in-module, import-error
+# google.cloud seems to confuse pylint
+from google.cloud import datastore
+# pylint: enable=no-name-in-module, import-error
+import prometheus_client
+
 def parse_args(argv):
     """Parses the command-line arguments.
 
@@ -78,14 +89,93 @@ def parse_args(argv):
              'way, independent parallel deployments can use the same datastore '
              'and not need independent projects.')
     parser.add_argument(
-        '--port',
+        '--prometheus_port',
         metavar='PORT',
         type=int,
-        default=8000,
-        help='The port on which both metrics and a summary of the sheet are '
-             'exported.')
+        default=9090,
+        help='The port on which metrics are exported.')
+    parser.add_argument(
+        '--webserver_port',
+        metavar='PORT',
+        type=int,
+        default=80,
+        help='The port on which a summary of the sheet is exported.')
     return parser.parse_args(argv)
-# pylint: enable=duplicate-code
+
+
+keys = ['dropboxrsyncaddress', 'contact', 'lastsuccessfulcollection',
+        'errorsincelastsuccessful', 'lastcollectionattempt',
+        'maxrawfilemtimearchived']
+
+
+def get_fleet_data(namespace):
+    datastore_client = datastore.Client(namespace=namespace)
+    answers = []
+    for item in datastore_client.query(kind='dropboxrsyncaddress').fetch():
+        answer = {}
+        print dir(item)
+        print dir(item.key)
+        print item.keys()
+        answer['dropboxrsyncaddress'] = item.key.name
+        for k in keys[1:]:
+            answer[k] = item.get(k, 'XXX - DATA MISSING')
+        answers.append(answer)
+    return answers
+
+
+class WebHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+    namespace = 'test'
+
+    def do_GET(self):
+        logging.info('New request!')
+        self._datastore_client = datastore.Client()
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html')
+        self.end_headers()
+        print >> self.wfile, textwrap.dedent('''\
+        <html>
+        <head>
+          <title>MLab Scraper Status</title>
+          <style>
+            table {
+              border-collapse: collapse;
+              margin-left: auto;
+              margin-right: auto;
+            }
+            tr:nth-child(even) {
+              background-color: #FFF;
+            }
+            tr:nth-child(even) {
+              background-color: #EEE;
+            }
+          </style>
+        </head>
+        <body>
+          <table><tr>''')
+        data = get_fleet_data(WebHandler.namespace)
+        urls = sorted(data, cmp=lambda a,b: cmp(a['dropboxrsyncaddress'], b['dropboxrsyncaddress']))
+        if not urls:
+            print >> self.wfile, '</table><p>NO DATA</p>'
+            return
+        for key in keys:
+            print >> self.wfile, '     <th>%s</th>' % key
+        print >> self.wfile, '  </tr>'
+        for data in urls:
+            print >> self.wfile, '  <tr>'
+            for key in keys:
+                print >> self.wfile, '     <td>%s</td>' % data.get(key, '')
+            print >> self.wfile, '    </tr>'
+        print >> self.wfile, '    </table>'
+        print >> self.wfile, '  <center><small>', time.ctime(), '</small></center>'
+        print >> self.wfile, '</body></html>'
+
+
+def start_webserver_in_new_thread(port):
+    server_address = ('', port)
+    class ThreadingSimpleServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
+        pass
+    httpd = ThreadingSimpleServer(server_address, WebHandler)
+    thread.start_new_thread(httpd.serve_forever, ())
 
 
 def main(argv):
@@ -102,12 +192,22 @@ def main(argv):
                '%(message)s')
     # Parse the commandline
     args = parse_args(argv[1:])
-    print args, "DELETE THIS LINE"
-    # Set up monitoring
-    # Set up datastore client
+    WebHandler.namespace = args.datastore_namespace
     # Set up spreadsheet client
-    # Set up the webserver
+    pass
+    # Set up the monitoring
+    prometheus_client.start_http_server(args.prometheus_port)
+    start_webserver_in_new_thread(args.webserver_port)
     # Repeatedly copy information from the datastore to the spreadsheet
+    while True:
+        # Download
+        data = get_fleet_data(args.datastore_namespace)
+        # Upload
+        pass
+        # Sleep
+        sleep_time = random.expovariate(1.0 / args.expected_upload_interval)
+        logging.info('Sleeping for %g seconds', sleep_time)
+        time.sleep(sleep_time)
 
 if __name__ == '__main__':
     main(sys.argv)
