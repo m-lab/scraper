@@ -501,13 +501,13 @@ class SyncStatus(object):
 
     By design, every running scraper instance should be associated with one
     (and only one) datastore Entity, and every Entity should be associated with
-    at most one running scraper instance.  To enforce this invariant, we use a
-    namespace field in combination with the rsync url and the cloud project
-    name (which is implicitly specified as the name of the project in which the
-    instance is running).
+    at most one running scraper instance.  To enforce this invariant, we use
+    the namespace feature of cloud datastore in combination with the rsync url
+    and the cloud project name (which is implicitly specified as the name of
+    the project in which the instance is running).
 
     A separate process will repeatedly query cloud datastore to find every
-    Entity in the project's Datastore with a particular namespace, and then
+    Entity in the project's Datastore within a particular namespace, and then
     update the coordinating spreadsheet to contain the same data as exists in
     cloud datastore.  The 'ground truth' of the system is maintained in cloud
     datastore, and the spreadsheet should be regarded as merely a display layer

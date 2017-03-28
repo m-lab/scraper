@@ -45,11 +45,16 @@ import textwrap
 import thread
 import time
 
+import apiclient
 # pylint: disable=no-name-in-module, import-error
 # google.cloud seems to confuse pylint
 from google.cloud import datastore
 # pylint: enable=no-name-in-module, import-error
+import httplib2
+from oauth2client.contrib import gce
+
 import prometheus_client
+
 
 def parse_args(argv):
     """Parses the command-line arguments.
@@ -82,12 +87,7 @@ def parse_args(argv):
         metavar='NAMESPACE',
         type=str,
         default='scraper',
-        help='The cloud datastore namespace to use in the current project. '
-             'Every google cloud project has one datastore associated with '
-             'it. In order for us to run multiple scrapers within the same '
-             'cloud project, we add a "namespace" element to every key. This '
-             'way, independent parallel deployments can use the same datastore '
-             'and not need independent projects.')
+        help='The cloud datastore namespace to use in the current project.')
     parser.add_argument(
         '--prometheus_port',
         metavar='PORT',
@@ -103,32 +103,33 @@ def parse_args(argv):
     return parser.parse_args(argv)
 
 
-keys = ['dropboxrsyncaddress', 'contact', 'lastsuccessfulcollection',
+KEYS = ['dropboxrsyncaddress', 'contact', 'lastsuccessfulcollection',
         'errorsincelastsuccessful', 'lastcollectionattempt',
         'maxrawfilemtimearchived']
 
 
 def get_fleet_data(namespace):
+    """Returns a list of dictionaries, one for every entry in the namespace."""
     datastore_client = datastore.Client(namespace=namespace)
     answers = []
     for item in datastore_client.query(kind='dropboxrsyncaddress').fetch():
         answer = {}
-        print dir(item)
-        print dir(item.key)
-        print item.keys()
         answer['dropboxrsyncaddress'] = item.key.name
-        for k in keys[1:]:
-            answer[k] = item.get(k, 'XXX - DATA MISSING')
+        for k in KEYS[1:]:
+            answer[k] = item.get(k, '')
         answers.append(answer)
     return answers
 
 
 class WebHandler(BaseHTTPServer.BaseHTTPRequestHandler):
+    """Print the ground truth from cloud datastore."""
     namespace = 'test'
 
+    # The name is inherited, so we have to use it even if pylint hates it.
+    # pylint: disable=invalid-name
     def do_GET(self):
+        """Print out the ground truth from cloud datastore as a webpage."""
         logging.info('New request!')
-        self._datastore_client = datastore.Client()
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
@@ -153,29 +154,49 @@ class WebHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         <body>
           <table><tr>''')
         data = get_fleet_data(WebHandler.namespace)
-        urls = sorted(data, cmp=lambda a,b: cmp(a['dropboxrsyncaddress'], b['dropboxrsyncaddress']))
-        if not urls:
+        if not data:
             print >> self.wfile, '</table><p>NO DATA</p>'
             return
-        for key in keys:
-            print >> self.wfile, '     <th>%s</th>' % key
-        print >> self.wfile, '  </tr>'
-        for data in urls:
-            print >> self.wfile, '  <tr>'
-            for key in keys:
-                print >> self.wfile, '     <td>%s</td>' % data.get(key, '')
-            print >> self.wfile, '    </tr>'
-        print >> self.wfile, '    </table>'
-        print >> self.wfile, '  <center><small>', time.ctime(), '</small></center>'
+        else:
+            for key in KEYS:
+                print >> self.wfile, '     <th>%s</th>' % key
+            print >> self.wfile, '  </tr>'
+            rows = sorted([d.get(key, '') for key in KEYS] for d in data)
+            for data in rows:
+                print >> self.wfile, '  <tr>'
+                for item in data:
+                    print >> self.wfile, '     <td>%s</td>' % item
+                print >> self.wfile, '    </tr>'
+            print >> self.wfile, '    </table>'
+        print >> self.wfile, '  <center><small>', time.ctime()
+        print >> self.wfile, '    </small></center>'
         print >> self.wfile, '</body></html>'
+    # pylint: enable=invalid-name
 
 
 def start_webserver_in_new_thread(port):
+    """Starts the wbeserver to serve the ground truth page.
+
+    Code cribbed from prometheus_client.
+    """
     server_address = ('', port)
-    class ThreadingSimpleServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
-        pass
+
+    class ThreadingSimpleServer(SocketServer.ThreadingMixIn,
+                                BaseHTTPServer.HTTPServer):
+        """Use the threading mix-in to avoid forking or blocking."""
+
     httpd = ThreadingSimpleServer(server_address, WebHandler)
     thread.start_new_thread(httpd.serve_forever, ())
+
+
+class Spreadsheet(object):
+
+    def __init__(self, service, sheet_id):
+        self._service = service
+        self._sheet_id = sheet_id
+
+    def update(self, data):
+        pass
 
 
 def main(argv):
@@ -194,7 +215,14 @@ def main(argv):
     args = parse_args(argv[1:])
     WebHandler.namespace = args.datastore_namespace
     # Set up spreadsheet client
-    pass
+    creds = gce.AppAssertionCredentials()
+    discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
+                     'version=v4')
+    sheets_service = apiclient.discovery.build(
+        'sheets', 'v4', discoveryServiceUrl=discovery_url,
+        credentials=creds, cache_discovery=False)
+    spreadsheet = Spreadsheet(sheets_service, args.spreadsheet)
+
     # Set up the monitoring
     prometheus_client.start_http_server(args.prometheus_port)
     start_webserver_in_new_thread(args.webserver_port)
@@ -203,7 +231,7 @@ def main(argv):
         # Download
         data = get_fleet_data(args.datastore_namespace)
         # Upload
-        pass
+        spreadsheet.update(data)
         # Sleep
         sleep_time = random.expovariate(1.0 / args.expected_upload_interval)
         logging.info('Sleeping for %g seconds', sleep_time)
