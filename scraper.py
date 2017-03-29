@@ -526,10 +526,9 @@ class SyncStatus(object):
     LAST_COLLECTION_KEY = 'lastcollectionattempt'
     MTIME_KEY = 'maxrawfilemtimearchived'
 
-    def __init__(self, client, rsync_url, namespace):
+    def __init__(self, client, rsync_url):
         self._client = client
         self._rsync_url = rsync_url
-        self._namespace = namespace
         self._key = None
         self._entity = None
 
@@ -543,8 +542,7 @@ class SyncStatus(object):
         A separate function so that it can be mocked for testing purposes.
         """
         if self._key is None:
-            self._key = self._client.key('namespace', self._namespace,
-                                         'rsync_url', self._rsync_url)
+            self._key = self._client.key(SyncStatus.RSYNC_KEY, self._rsync_url)
         return self._client.get(self._key)
 
     def get_last_archived_date(self, default_date=datetime.date(2009, 1, 1)):
@@ -588,6 +586,10 @@ class SyncStatus(object):
             logging.info('Key %s has no value. Making a new one.',
                          self._rsync_url)
             value = cloud_datastore.entity.Entity(key=self._key)
+            value[SyncStatus.COLLECTION_KEY] = u''
+            value[SyncStatus.DEBUG_MESSAGE_KEY] = u''
+            value[SyncStatus.LAST_COLLECTION_KEY] = u''
+            value[SyncStatus.MTIME_KEY] = 0
         value[entry_key] = entry_value
         self._client.put(value)
 
@@ -649,8 +651,9 @@ def init(args):  # pragma: no cover
     creds = gce.AppAssertionCredentials()
 
     # Set up cloud datastore and its dependencies
-    datastore_service = cloud_datastore.Client()
-    status = SyncStatus(datastore_service, rsync_url, args.datastore_namespace)
+    datastore_service = cloud_datastore.Client(
+        namespace=args.datastore_namespace)
+    status = SyncStatus(datastore_service, rsync_url)
     logging.getLogger().addHandler(SyncStatusLogHandler(status))
 
     # Set up cloud storage

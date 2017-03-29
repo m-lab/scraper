@@ -456,7 +456,7 @@ BADBADBAD
     def test_get_data_caches_key(self):
         client = mock.Mock()
         client.key.return_value = {}
-        status = scraper.SyncStatus(client, None, None)
+        status = scraper.SyncStatus(client, None)
         status.get_data()
         client.key.assert_called_once()
         client.get.assert_called_once()
@@ -470,7 +470,7 @@ BADBADBAD
         client.key.return_value = {}
         client.get.side_effect = [
             scraper.cloud_exceptions.ServiceUnavailable('one failure'), {}]
-        status = scraper.SyncStatus(client, None, None)
+        status = scraper.SyncStatus(client, None)
         status.get_data()
 
     @testfixtures.log_capture()
@@ -479,28 +479,28 @@ BADBADBAD
         client.key.return_value = {}
         client.get.side_effect = scraper.cloud_exceptions.ServiceUnavailable(
             'permanent failure')
-        status = scraper.SyncStatus(client, None, None)
+        status = scraper.SyncStatus(client, None)
         with self.assertRaises(scraper.cloud_exceptions.ServiceUnavailable):
             status.get_data()
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
     def test_get_last_archived_date_from_status_default(self, patched_get):
         patched_get.return_value = None
-        status = scraper.SyncStatus(None, None, None)
+        status = scraper.SyncStatus(None, None)
         last_archived_date = status.get_last_archived_date()
         self.assertEqual(last_archived_date, datetime.date(2009, 1, 1))
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
     def test_get_last_archived_date_from_status_no_date(self, patched_get):
         patched_get.return_value = dict(irrelevant='monkey')
-        status = scraper.SyncStatus(None, None, None)
+        status = scraper.SyncStatus(None, None)
         last_archived_date = status.get_last_archived_date()
         self.assertEqual(last_archived_date, datetime.date(2009, 1, 1))
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
     @testfixtures.log_capture()
     def test_get_last_archived_date_bad_date(self, patched_get, log):
-        status = scraper.SyncStatus(None, None, None)
+        status = scraper.SyncStatus(None, None)
         with self.assertRaises(SystemExit):
             patched_get.return_value = dict(
                 lastsuccessfulcollection='2009-13-10')
@@ -509,7 +509,7 @@ BADBADBAD
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
     def test_get_last_archived_date_empty_date(self, patched_get):
-        status = scraper.SyncStatus(None, None, None)
+        status = scraper.SyncStatus(None, None)
         patched_get.return_value = dict(lastsuccessfulcollection='')
         default_date = datetime.date(1970, 1, 1)
         self.assertEqual(status.get_last_archived_date(default_date),
@@ -517,14 +517,14 @@ BADBADBAD
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
     def test_get_last_archived_date(self, patched_get):
-        status = scraper.SyncStatus(None, None, None)
+        status = scraper.SyncStatus(None, None)
         patched_get.return_value = dict(lastsuccessfulcollection='x2010-11-02')
         last_archived_date = status.get_last_archived_date()
         self.assertEqual(last_archived_date, datetime.date(2010, 11, 2))
 
     @mock.patch.object(scraper.SyncStatus, 'update_data')
     def test_update_last_archived_date(self, patched_update):
-        status = scraper.SyncStatus(None, None, None)
+        status = scraper.SyncStatus(None, None)
         status.update_last_archived_date(datetime.date(2012, 2, 29))
         patched_update.assert_called_once()
         self.assertTrue(u'x2012-02-29' in patched_update.call_args[0])
@@ -534,7 +534,7 @@ BADBADBAD
     def test_update_data_no_value(self):
         client = mock.Mock()
         client.get.return_value = None
-        status = scraper.SyncStatus(client, None, None)
+        status = scraper.SyncStatus(client, None)
         status.update_data('key', 'value')
         client.put.assert_called_once()
 
@@ -544,7 +544,7 @@ BADBADBAD
         client.get.return_value = None
         client.put.side_effect = [
             scraper.cloud_exceptions.ServiceUnavailable('one failure'), None]
-        status = scraper.SyncStatus(client, None, None)
+        status = scraper.SyncStatus(client, None)
         status.update_data('key', 'value')
 
     @testfixtures.log_capture()
@@ -553,7 +553,7 @@ BADBADBAD
         client.get.return_value = None
         client.put.side_effect = scraper.cloud_exceptions.ServiceUnavailable(
             'permanent failure')
-        status = scraper.SyncStatus(client, None, None)
+        status = scraper.SyncStatus(client, None)
         with self.assertRaises(scraper.cloud_exceptions.ServiceUnavailable):
             status.update_data('key', 'value')
 
@@ -596,7 +596,7 @@ BADBADBAD
 
     @mock.patch.object(scraper.SyncStatus, 'update_data')
     def test_update_debug_msg(self, patched_update_data):
-        status = scraper.SyncStatus(None, None, None)
+        status = scraper.SyncStatus(None, None)
         status.update_debug_message('msg')
         patched_update_data.assert_called_once_with(
             'errorsincelastsuccessful', 'msg')
@@ -606,7 +606,7 @@ BADBADBAD
     @freezegun.freeze_time('2016-01-28 07:43:16 UTC')
     @mock.patch.object(scraper.SyncStatus, 'update_data')
     def test_update_last_collection(self, patched_update_data):
-        status = scraper.SyncStatus(None, None, None)
+        status = scraper.SyncStatus(None, None)
         status.update_last_collection()
         patched_update_data.assert_called_once_with('lastcollectionattempt',
                                                     'x2016-01-28-07:43')
@@ -615,7 +615,7 @@ BADBADBAD
 
     @mock.patch.object(scraper.SyncStatus, 'update_data')
     def test_update_mtime(self, patched_update_data):
-        status = scraper.SyncStatus(None, None, None)
+        status = scraper.SyncStatus(None, None)
         status.update_mtime(7)
         patched_update_data.assert_called_once_with(
             'maxrawfilemtimearchived', 7)
@@ -623,7 +623,7 @@ BADBADBAD
     @mock.patch.object(scraper.SyncStatus, 'update_data')
     @testfixtures.log_capture()
     def test_log_handler(self, patched_update_data, _log):
-        status = scraper.SyncStatus(None, None, None)
+        status = scraper.SyncStatus(None, None)
         loghandler = scraper.SyncStatusLogHandler(status)
         logger = logging.getLogger('temp_test')
         logger.setLevel(logging.ERROR)
