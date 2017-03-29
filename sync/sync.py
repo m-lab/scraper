@@ -50,7 +50,6 @@ import apiclient
 # google.cloud seems to confuse pylint
 from google.cloud import datastore
 # pylint: enable=no-name-in-module, import-error
-import httplib2
 from oauth2client.contrib import gce
 
 import prometheus_client
