@@ -69,10 +69,7 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(args.rsync_port, 7999)
         self.assertEqual(args.max_uncompressed_size, 1000000000)
 
-    # Patching this prevents ArgumentParser from printing anything.  It's
-    # potentially brittle, but the readability gains are worth it.
-    @mock.patch.object(argparse.ArgumentParser, '_print_message')
-    def test_args_help(self, _patched_argparse):
+    def test_args_help(self):
         with self.assertRaises(SystemExit):
             with testfixtures.OutputCapture() as _:
                 run_scraper.parse_cmdline(['-h'])

@@ -194,11 +194,32 @@ class Spreadsheet(object):
         self._service = service
         self._sheet_id = sheet_id
 
+    def _retrieve_sheet_data(self):
+        return KEYS, []
+
+    def _update_spreadsheet(self, header, rows):
+        return
+
     def update(self, data):
-        pass
+        updated_data = {d[0]:d for d in data}
+        new_rows = []
+        header, old_rows = self._retrieve_sheet_data()
+        rsync_index = header.index(KEYS[0])
+        for old_row in old_rows:
+            rsync_url = old_row[rsync_index]
+            if rsync_url in updated_data:
+                new_row = [updated_data[rsync_url][h] for h in header]
+                new_rows.append(new_row)
+                del updated_data[rsync_url]
+            else:
+                new_rows.append(old_row)
+        for rsync_url in updated_data:
+            new_row = [updated_data[rsync_url][h] for h in header]
+            new_rows.append(new_row)
+        return self._update_spreadsheet(header, new_rows)
+ 
 
-
-def main(argv):
+def main(argv):  # pragma: no cover
     """Update the spreadsheet in a loop.
 
     Set up the logging, parse the command line, set up monitoring, set up the
