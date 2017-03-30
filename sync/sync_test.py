@@ -134,14 +134,5 @@ class TestSync(unittest.TestCase):
         sync.WebHandler.do_GET(mock_handler)
         self.assertEqual(mock_handler.wfile.getvalue().count('<td>'), 0)
 
-    @mock.patch.object(sync, 'datastore')
-    def test_spreadsheet(self, mock_datastore):
-        mock_client = mock.Mock()
-        mock_datastore.Client.return_value = mock_client
-        mock_client.query().fetch.return_value = self.test_datastore_data
-        mock_spreadsheet_service = mock.Mock()
-        sheet = sync.Spreadsheet(mock_spreadsheet_service, 'test_id')
-        sheet.update(sync.get_fleet_data('test_namespace'))
-
     def test_docstring_exists(self):
         self.assertIsNotNone(sync.__doc__)
