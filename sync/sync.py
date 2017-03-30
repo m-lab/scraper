@@ -111,9 +111,9 @@ def get_fleet_data(namespace):
     """Returns a list of dictionaries, one for every entry in the namespace."""
     datastore_client = datastore.Client(namespace=namespace)
     answers = []
-    for item in datastore_client.query(kind='dropboxrsyncaddress').fetch():
+    for item in datastore_client.query(kind='rsync_url').fetch():
         answer = {}
-        answer['dropboxrsyncaddress'] = item.key.name
+        answer[KEYS[0]] = item.key.name
         for k in KEYS[1:]:
             answer[k] = item.get(k, '')
         answers.append(answer)
@@ -173,7 +173,7 @@ class WebHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     # pylint: enable=invalid-name
 
 
-def start_webserver_in_new_thread(port):
+def start_webserver_in_new_thread(port):  # pragma: no cover
     """Starts the wbeserver to serve the ground truth page.
 
     Code cribbed from prometheus_client.
@@ -195,13 +195,13 @@ class Spreadsheet(object):
         self._sheet_id = sheet_id
 
     def _retrieve_sheet_data(self):
-        return KEYS, []
+        return KEYS, [['' for x in KEYS]]
 
     def _update_spreadsheet(self, header, rows):
         return
 
     def update(self, data):
-        updated_data = {d[0]:d for d in data}
+        updated_data = {d[KEYS[0]]: d for d in data}
         new_rows = []
         header, old_rows = self._retrieve_sheet_data()
         rsync_index = header.index(KEYS[0])
@@ -217,7 +217,7 @@ class Spreadsheet(object):
             new_row = [updated_data[rsync_url][h] for h in header]
             new_rows.append(new_row)
         return self._update_spreadsheet(header, new_rows)
- 
+
 
 def main(argv):  # pragma: no cover
     """Update the spreadsheet in a loop.
@@ -257,5 +257,5 @@ def main(argv):  # pragma: no cover
         logging.info('Sleeping for %g seconds', sleep_time)
         time.sleep(sleep_time)
 
-if __name__ == '__main__':
+if __name__ == '__main__':  # pragma: no cover
     main(sys.argv)
