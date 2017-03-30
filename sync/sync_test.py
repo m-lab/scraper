@@ -43,21 +43,26 @@ class TestSync(unittest.TestCase):
 
         self.test_datastore_data = [
             FakeEntity(
-                u'rsync://utility.mlab.mlab4.prg01.measurement-lab.org:7999/switch',
+                u'rsync://utility.mlab.mlab4.prg01.'
+                'measurement-lab.org:7999/switch',
                 {u'lastsuccessfulcollection': 'x2017-03-28',
                  u'errorsincelastsuccessful': '',
                  u'lastcollectionattempt': 'x2017-03-29-21:22',
                  u'maxrawfilemtimearchived': 1490746201L}),
             FakeEntity(
-                u'rsync://utility.mlab.mlab4.prg01.measurement-lab.org:7999/utilization',
+                u'rsync://utility.mlab.mlab4.prg01.'
+                'measurement-lab.org:7999/utilization',
                 {u'errorsincelastsuccessful': '',
                  u'lastsuccessfulcollection': 'x2017-03-28',
                  u'lastcollectionattempt': 'x2017-03-29-21:04',
                  u'maxrawfilemtimearchived': 1490746202L}),
             FakeEntity(
-                u'rsync://utility.mlab.mlab4.sea02.measurement-lab.org:7999/switch',
+                u'rsync://utility.mlab.mlab4.sea02.'
+                'measurement-lab.org:7999/switch',
                 {u'lastcollectionattempt': 'x2017-03-29-15:46',
-                 u'errorsincelastsuccessful': '[2017-03-29 15:49:07,364 ERROR run_scraper.py:196] Scrape and upload failed: 1'})]
+                 u'errorsincelastsuccessful':
+                     '[2017-03-29 15:49:07,364 ERROR run_scraper.py:196] '
+                     'Scrape and upload failed: 1'})]
 
     def test_parse_args_no_spreadsheet(self):
         with self.assertRaises(SystemExit):
@@ -84,21 +89,26 @@ class TestSync(unittest.TestCase):
         mock_client.query().fetch.return_value = self.test_datastore_data
         returned_answers = sync.get_fleet_data('scraper')
         correct_answers = [
-            {u'dropboxrsyncaddress': u'rsync://utility.mlab.mlab4.prg01.measurement-lab.org:7999/switch',
+            {u'dropboxrsyncaddress': u'rsync://utility.mlab.mlab4.prg01.'
+                                     'measurement-lab.org:7999/switch',
              u'contact': '',
              u'lastsuccessfulcollection': 'x2017-03-28',
              u'errorsincelastsuccessful': '',
              u'lastcollectionattempt': 'x2017-03-29-21:22',
              u'maxrawfilemtimearchived': 1490746201L},
-            {u'dropboxrsyncaddress': u'rsync://utility.mlab.mlab4.prg01.measurement-lab.org:7999/utilization',
+            {u'dropboxrsyncaddress': u'rsync://utility.mlab.mlab4.prg01.'
+                                     'measurement-lab.org:7999/utilization',
              u'contact': '',
              u'errorsincelastsuccessful': '',
              u'lastsuccessfulcollection': 'x2017-03-28',
              u'lastcollectionattempt': 'x2017-03-29-21:04',
              u'maxrawfilemtimearchived': 1490746202L},
-            {u'dropboxrsyncaddress': u'rsync://utility.mlab.mlab4.sea02.measurement-lab.org:7999/switch',
+            {u'dropboxrsyncaddress': u'rsync://utility.mlab.mlab4.sea02'
+                                     '.measurement-lab.org:7999/switch',
              u'contact': '',
-             u'errorsincelastsuccessful': '[2017-03-29 15:49:07,364 ERROR run_scraper.py:196] Scrape and upload failed: 1',
+             u'errorsincelastsuccessful':
+                 '[2017-03-29 15:49:07,364 ERROR run_scraper.py:196] '
+                 'Scrape and upload failed: 1',
              u'lastsuccessfulcollection': '',
              u'lastcollectionattempt': 'x2017-03-29-15:46',
              u'maxrawfilemtimearchived': ''}]

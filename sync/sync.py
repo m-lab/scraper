@@ -189,18 +189,32 @@ def start_webserver_in_new_thread(port):  # pragma: no cover
 
 
 class Spreadsheet(object):
+    """Updates a given spreadsheet to mirror cloud datastore."""
 
     def __init__(self, service, sheet_id):
         self._service = service
         self._sheet_id = sheet_id
 
     def _retrieve_sheet_data(self):
-        return KEYS, [['' for x in KEYS]]
+        """Get the current data from the sheet.
 
-    def _update_spreadsheet(self, header, rows):
+        Used to ensure that the update process does not re-order rows.
+        """
+        return KEYS, [['' for _ in KEYS]]
+
+    def _update_spreadsheet(self, _header, _rows):
+        """Sets the contents of the spreadsheet."""
         return
 
     def update(self, data):
+        """Updates the contents of the spreadsheet.
+
+        This respects the existing order of the rsync modules, but appends new
+        rows for any rsync modules that did not previously exist in the sheet.
+
+        Args:
+          data: a list of dictionaries
+        """
         updated_data = {d[KEYS[0]]: d for d in data}
         new_rows = []
         header, old_rows = self._retrieve_sheet_data()
@@ -213,7 +227,7 @@ class Spreadsheet(object):
                 del updated_data[rsync_url]
             else:
                 new_rows.append(old_row)
-        for rsync_url in updated_data:
+        for rsync_url in sorted(updated_data):
             new_row = [updated_data[rsync_url][h] for h in header]
             new_rows.append(new_row)
         return self._update_spreadsheet(header, new_rows)
