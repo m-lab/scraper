@@ -153,8 +153,8 @@ class WebHandler(BaseHTTPServer.BaseHTTPRequestHandler):
           <table><tr>''')
         try:
             data = get_fleet_data(WebHandler.namespace)
-	# This will be used for debugging errors, so catching an overly-broad
-	# exception is apprpriate.
+        # This will be used for debugging errors, so catching an overly-broad
+        # exception is apprpriate.
         # pylint: disable=broad-except
         except Exception as e:
             logging.error('Unable to retrieve data from datastore: %s', str(e))
