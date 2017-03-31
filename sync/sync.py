@@ -22,11 +22,11 @@ is kind of a janky hack for what really should be a key-value store. The new
 scraper has its source of truth in a key-value store (Google Cloud Datastore),
 and this program has the job of updating the spreadsheet with that truth.  In a
 longer term migration, this script and the spreadsheet should both be
-eliminated, and the scripts in charge of data deletion should read from cloud
-datastore directly.
+eliminated, and the scripts in charge of data deletion should read from a
+low-latency source of cloud datastore data.
 
 This program needs to be run on a GCE instance that has access to the Sheets
-API  Sheets API access is not enabled by default for GCE, and it can't be
+API.  Sheets API access is not enabled by default for GCE, and it can't be
 enabled from the web-based GCE instance creation interface.  Worse, the scopes
 that a GCE instance has can't be changed after creation. To create a new GCE
 instance named scraper-dev that has access to both cloud APIs and spreadsheet
@@ -44,6 +44,7 @@ import sys
 import textwrap
 import thread
 import time
+import traceback
 
 # pylint: disable=no-name-in-module, import-error
 # google.cloud seems to confuse pylint
@@ -126,7 +127,7 @@ class WebHandler(BaseHTTPServer.BaseHTTPRequestHandler):
     # pylint: disable=invalid-name
     def do_GET(self):
         """Print out the ground truth from cloud datastore as a webpage."""
-        logging.info('New request!')
+        logging.info('Request from %s', self.client_address)
         self.send_response(200)
         self.send_header('Content-type', 'text/html')
         self.end_headers()
@@ -150,9 +151,23 @@ class WebHandler(BaseHTTPServer.BaseHTTPRequestHandler):
         </head>
         <body>
           <table><tr>''')
-        data = get_fleet_data(WebHandler.namespace)
+        try:
+            data = get_fleet_data(WebHandler.namespace)
+	# This will be used for debugging errors, so catching an overly-broad
+	# exception is apprpriate.
+        # pylint: disable=broad-except
+        except Exception as e:
+            logging.error('Unable to retrieve data from datastore: %s', str(e))
+            print >> self.wfile, '</table>'
+            print >> self.wfile, '<p>Datastore error:</p><pre>'
+            traceback.print_exc(file=self.wfile)
+            print >> self.wfile, '</pre></body></html>'
+            return
+        # pylint: enable=broad-except
+
         if not data:
             print >> self.wfile, '</table><p>NO DATA</p>'
+            print >> self.wfile, '</body></html>'
             return
         else:
             for key in KEYS:

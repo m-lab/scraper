@@ -87,7 +87,9 @@ class TestSync(unittest.TestCase):
         mock_client = mock.Mock()
         mock_datastore.Client.return_value = mock_client
         mock_client.query().fetch.return_value = self.test_datastore_data
+
         returned_answers = sync.get_fleet_data('scraper')
+
         correct_answers = [
             {u'dropboxrsyncaddress': u'rsync://utility.mlab.mlab4.prg01.'
                                      'measurement-lab.org:7999/switch',
@@ -112,7 +114,7 @@ class TestSync(unittest.TestCase):
              u'lastsuccessfulcollection': '',
              u'lastcollectionattempt': 'x2017-03-29-15:46',
              u'maxrawfilemtimearchived': ''}]
-        self.assertEqual(returned_answers, correct_answers)
+        self.assertItemsEqual(returned_answers, correct_answers)
 
     @mock.patch.object(sync, 'datastore')
     def test_do_get(self, mock_datastore):
@@ -121,7 +123,10 @@ class TestSync(unittest.TestCase):
         mock_client.query().fetch.return_value = self.test_datastore_data
         mock_handler = mock.Mock(sync.WebHandler)
         mock_handler.wfile = StringIO.StringIO()
+        mock_handler.client_address = (1234, '127.0.0.1')
+
         sync.WebHandler.do_GET(mock_handler)
+
         self.assertEqual(mock_handler.wfile.getvalue().count('<tr>'), 4)
 
     @mock.patch.object(sync, 'datastore')
@@ -131,8 +136,25 @@ class TestSync(unittest.TestCase):
         mock_client.query().fetch.return_value = []
         mock_handler = mock.Mock(sync.WebHandler)
         mock_handler.wfile = StringIO.StringIO()
+        mock_handler.client_address = (1234, '127.0.0.1')
+
         sync.WebHandler.do_GET(mock_handler)
+
         self.assertEqual(mock_handler.wfile.getvalue().count('<td>'), 0)
+
+    @mock.patch.object(sync, 'datastore')
+    @testfixtures.log_capture()
+    def test_do_get_datastore_failure(self, mock_datastore, log):
+        mock_datastore.Client.side_effect = Exception
+        mock_handler = mock.Mock(sync.WebHandler)
+        mock_handler.wfile = StringIO.StringIO()
+        mock_handler.client_address = (1234, '127.0.0.1')
+
+        sync.WebHandler.do_GET(mock_handler)
+
+        self.assertEqual(mock_handler.wfile.getvalue().count('<td>'), 0)
+        self.assertEqual(mock_handler.wfile.getvalue().count('<pre>'), 1)
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
     def test_docstring_exists(self):
         self.assertIsNotNone(sync.__doc__)
