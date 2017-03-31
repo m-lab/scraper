@@ -29,7 +29,7 @@ load-plugins=
 # Disable the message, report, category or checker with the given id(s). You
 # can either give multiple identifier separated by comma (,) or put this option
 # multiple time.
-disable=locally-disabled, locally-enabled
+disable=locally-disabled, locally-enabled, too-few-public-methods
 
 
 [REPORTS]
