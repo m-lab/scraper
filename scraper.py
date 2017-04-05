@@ -39,12 +39,8 @@ import prometheus_client
 import retry
 
 from oauth2client.contrib import gce
-# pylint: disable=no-name-in-module, import-error
-# google.cloud seems to confuse pylint, so importing in this way will avoid
-# later pylint complaints.
 import google.cloud.datastore as cloud_datastore
 import google.cloud.exceptions as cloud_exceptions
-# pylint: enable=no-name-in-module, import-error
 
 
 # These are the quantities monitored by prometheus
@@ -455,12 +451,10 @@ def upload_tarfile(service, tgz_filename, date, host, experiment,
         if progress:
             logging.debug('Uploaded %d%%', 100.0 * progress.progress())
     logging.info('Upload to %s/%s complete!', bucket, name)
-    # pylint: disable=no-member
     BYTES_UPLOADED.labels(
         bucket=bucket,
         rsync_host=host,
         experiment=experiment).inc(os.stat(tgz_filename).st_size)
-    # pylint: enable=no-member
 
 
 def remove_datafiles(directory, day):

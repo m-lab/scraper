@@ -46,10 +46,9 @@ import thread
 import time
 import traceback
 
-# pylint: disable=no-name-in-module, import-error
-# google.cloud seems to confuse pylint
+import apiclient
 from google.cloud import datastore
-# pylint: enable=no-name-in-module, import-error
+from oauth2client.contrib import gce
 
 import prometheus_client
 
@@ -201,6 +200,70 @@ def start_webserver_in_new_thread(port):  # pragma: no cover
     thread.start_new_thread(httpd.serve_forever, ())
 
 
+class Spreadsheet(object):
+    """Updates a given spreadsheet to mirror cloud datastore."""
+
+    def __init__(self, service, sheet_id,
+                 worksheet='Drop box status (auto updated)'):
+        self._service = service
+        self._sheet_id = sheet_id
+        self._worksheet = worksheet
+
+    def _retrieve_sheet_data(self):
+        """Get the current data from the sheet.
+
+        Used to ensure that the update process does not re-order rows.
+        """
+        sheet_range = self._worksheet + '!A:' + chr(ord('A') + len(KEYS))
+        result = self._service.spreadsheets().values().get(
+            spreadsheetId=self._sheet_id, range=sheet_range).execute()
+        rows = result.get('values', [])
+        if rows:
+            return rows[0], rows[1:]
+        else:
+            logging.warning('No data found on spreadsheet.')
+            return KEYS, []
+
+    def _update_spreadsheet(self, header, rows):
+        """Sets the contents of the spreadsheet."""
+        update_range = (self._worksheet +
+                        '!A1:' + chr(ord('A') + len(header))
+                        + str(len(rows) + 2))
+        body = {'values': [header] + rows}
+        logging.info('About to update %s', update_range)
+        response = self._service.spreadsheets().values().update(
+            spreadsheetId=self._sheet_id, range=update_range,
+            body=body, valueInputOption='RAW').execute()
+        if not response['updatedRows']:
+            logging.error('Spreadsheet update failed (%s)', response)
+
+    def update(self, data):
+        """Updates the contents of the spreadsheet.
+
+        This respects the existing order of the rsync modules, but appends new
+        rows for any rsync modules that did not previously exist in the sheet.
+
+        Args:
+          data: a list of dictionaries
+        """
+        updated_data = {d[KEYS[0]]: d for d in data}
+        new_rows = []
+        header, old_rows = self._retrieve_sheet_data()
+        rsync_index = header.index(KEYS[0])
+        for old_row in old_rows:
+            rsync_url = old_row[rsync_index]
+            if rsync_url in updated_data:
+                new_row = [updated_data[rsync_url][h] for h in header]
+                new_rows.append(new_row)
+                del updated_data[rsync_url]
+            else:
+                new_rows.append(old_row)
+        for rsync_url in sorted(updated_data):
+            new_row = [updated_data[rsync_url][h] for h in header]
+            new_rows.append(new_row)
+        return self._update_spreadsheet(header, new_rows)
+
+
 def main(argv):  # pragma: no cover
     """Update the spreadsheet in a loop.
 
@@ -217,7 +280,13 @@ def main(argv):  # pragma: no cover
     args = parse_args(argv[1:])
     WebHandler.namespace = args.datastore_namespace
     # Set up spreadsheet client
-
+    creds = gce.AppAssertionCredentials()
+    discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
+                     'version=v4')
+    sheets_service = apiclient.discovery.build(
+        'sheets', 'v4', discoveryServiceUrl=discovery_url,
+        credentials=creds, cache_discovery=False)
+    spreadsheet = Spreadsheet(sheets_service, args.spreadsheet)
     # Set up the monitoring
     prometheus_client.start_http_server(args.prometheus_port)
     start_webserver_in_new_thread(args.webserver_port)
@@ -226,11 +295,12 @@ def main(argv):  # pragma: no cover
         # Download
         data = get_fleet_data(args.datastore_namespace)
         # Upload
-
+        spreadsheet.update(data)
         # Sleep
         sleep_time = random.expovariate(1.0 / args.expected_upload_interval)
         logging.info('Sleeping for %g seconds', sleep_time)
         time.sleep(sleep_time)
+
 
 if __name__ == '__main__':  # pragma: no cover
     main(sys.argv)
