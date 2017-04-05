@@ -52,6 +52,32 @@ from oauth2client.contrib import gce
 
 import prometheus_client
 
+# Prometheus histogram buckets are web-response-sized by default, with lots of
+# sub-second buckets and very few multi-second buckets.  We need to change them
+# to rsync-download-sized, with lots of multi-second buckets up to even a
+# multi-hour bucket or two.  The precise choice of bucket values below is a
+# compromise between exponentially-sized bucket growth and a desire to make
+# sure that the bucket sizes are nice round time units.
+TIME_BUCKETS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0,
+                1800.0, 3600.0, 7200.0, float('inf'))
+
+# The monitoring variables exported by the prometheus_client
+# The prometheus_client libraries confuse the linter.
+# pylint: disable=no-value-for-parameter
+RUNS = prometheus_client.Histogram(
+    'spreadsheet_sync_runtime_seconds',
+    'How long each sheet sync took',
+    buckets=TIME_BUCKETS)
+SLEEPS = prometheus_client.Histogram(
+    'spreadsheet_sync_sleep_time_seconds',
+    'Sleep time between sheet update runs (should be an exp distribution)',
+    buckets=TIME_BUCKETS)
+# pylint: enable=no-value-for-parameter
+SUCCESS = prometheus_client.Counter(
+    'spreadsheet_sync_success',
+    'How many times has the sheet update succeeded and failed',
+    ['message'])
+
 
 def parse_args(argv):
     """Parses the command-line arguments.
@@ -292,14 +318,20 @@ def main(argv):  # pragma: no cover
     start_webserver_in_new_thread(args.webserver_port)
     # Repeatedly copy information from the datastore to the spreadsheet
     while True:
-        # Download
-        data = get_fleet_data(args.datastore_namespace)
-        # Upload
-        spreadsheet.update(data)
+        try:
+            with RUNS.time():
+                # Download
+                data = get_fleet_data(args.datastore_namespace)
+                # Upload
+                spreadsheet.update(data)
+            SUCCESS.labels(message='success').inc()
+        except Exception as error:
+            SUCCESS.labels(message=str(error.message)).inc()
         # Sleep
         sleep_time = random.expovariate(1.0 / args.expected_upload_interval)
         logging.info('Sleeping for %g seconds', sleep_time)
-        time.sleep(sleep_time)
+        with SLEEPS.time():
+            time.sleep(sleep_time)
 
 
 if __name__ == '__main__':  # pragma: no cover
