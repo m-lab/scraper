@@ -170,10 +170,19 @@ class TestSync(unittest.TestCase):
             'values': []
         }
         mock_service.spreadsheets().values().update().execute.return_value = {
-            'updatedRows': 'a value'
+            'updatedRows': 'a true value'
         }
+
         sheet = sync.Spreadsheet(mock_service, 'test_id')
         sheet.update(sync.get_fleet_data('test_namespace'))
+
+        _args, kwargs = mock_service.spreadsheets().values().update.call_args
+        new_values = kwargs['body']['values']
+        mock_service.spreadsheets().values().get().execute.assert_called()
+        mock_service.spreadsheets().values().update().execute.assert_called()
+        self.assertEqual(new_values[0], sync.KEYS)
+        # One header row, three rows from datastore
+        self.assertEqual(len(new_values), 4)
         self.assertIn('WARNING', [x.levelname for x in log.records])
 
     @mock.patch.object(sync, 'datastore')
@@ -186,13 +195,24 @@ class TestSync(unittest.TestCase):
             'values': [sync.KEYS] +
                       [[u'rsync://utility.mlab.mlab4.prg01.'
                         'measurement-lab.org:7999/switch'] +
+                       ['' for _ in range(len(sync.KEYS) - 1)],
+                       [u'rsync://test'] +
                        ['' for _ in range(len(sync.KEYS) - 1)]]
         }
         mock_service.spreadsheets().values().update().execute.return_value = {
-            'updatedRows': 'a value'
+            'updatedRows': 'a true value'
         }
+
         sheet = sync.Spreadsheet(mock_service, 'test_id')
         sheet.update(sync.get_fleet_data('test_namespace'))
+
+        _args, kwargs = mock_service.spreadsheets().values().update.call_args
+        new_values = kwargs['body']['values']
+        mock_service.spreadsheets().values().get().execute.assert_called()
+        mock_service.spreadsheets().values().update().execute.assert_called()
+        self.assertEqual(new_values[0], sync.KEYS)
+        # One header row, three rows from datastore, one for rsync://test
+        self.assertEqual(len(new_values), 5)
 
     @mock.patch.object(sync, 'datastore')
     @testfixtures.log_capture()
@@ -210,5 +230,25 @@ class TestSync(unittest.TestCase):
             'updatedRows': False
         }
         sheet = sync.Spreadsheet(mock_service, 'test_id')
-        sheet.update(sync.get_fleet_data('test_namespace'))
+        with self.assertRaises(sync.SyncException):
+            sheet.update(sync.get_fleet_data('test_namespace'))
+
+        mock_service.spreadsheets().values().get().execute.assert_called()
+        mock_service.spreadsheets().values().update().execute.assert_called()
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+
+    @mock.patch.object(sync, 'datastore')
+    @testfixtures.log_capture()
+    def test_spreadsheet_retrieve_fails(self, mock_datastore, log):
+        mock_client = mock.Mock()
+        mock_datastore.Client.return_value = mock_client
+        mock_client.query().fetch.return_value = self.test_datastore_data
+        mock_service = mock.Mock()
+        mock_service.spreadsheets().values().get().execute.return_value = {}
+
+        sheet = sync.Spreadsheet(mock_service, 'test_id')
+        with self.assertRaises(sync.SyncException):
+            sheet.update(sync.get_fleet_data('test_namespace'))
+
+        mock_service.spreadsheets().values().get().execute.assert_called()
         self.assertIn('ERROR', [x.levelname for x in log.records])

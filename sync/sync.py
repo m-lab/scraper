@@ -79,6 +79,10 @@ SUCCESS = prometheus_client.Counter(
     ['message'])
 
 
+class SyncException(Exception):
+    """The exceptions this system raises."""
+
+
 def parse_args(argv):
     """Parses the command-line arguments.
 
@@ -239,11 +243,19 @@ class Spreadsheet(object):
         """Get the current data from the sheet.
 
         Used to ensure that the update process does not re-order rows.
+
+        Raises:
+           SyncException: The update failed.
         """
+        # Sheet ranges have the form: <worksheet name>!<col1>:<col2>
         sheet_range = self._worksheet + '!A:' + chr(ord('A') + len(KEYS))
         result = self._service.spreadsheets().values().get(
             spreadsheetId=self._sheet_id, range=sheet_range).execute()
-        rows = result.get('values', [])
+        if 'values' not in result:
+            logging.error('Spreadsheet retrieve failed (%s)', result)
+            raise SyncException(
+                'Could not retrieve sheet data (%s)' % str(result))
+        rows = result.get('values')
         if rows:
             return rows[0], rows[1:]
         else:
@@ -251,10 +263,20 @@ class Spreadsheet(object):
             return KEYS, []
 
     def _update_spreadsheet(self, header, rows):
-        """Sets the contents of the spreadsheet."""
+        """Sets the contents of the spreadsheet.
+
+        Used to set the contents of the spreadsheet, overriding all existing
+        items in the sheet.
+
+        Raises:
+           SyncException: The update failed.
+        """
+        # Sheet ranges have the form: <worksheet name>!<col1>:<col2>
+        # Row numbers are 1-indexed instead of zero-indexed and the first row
+        # is reserved for the header.
         update_range = (self._worksheet +
                         '!A1:' + chr(ord('A') + len(header))
-                        + str(len(rows) + 2))
+                        + str(len(rows) + 1))
         body = {'values': [header] + rows}
         logging.info('About to update %s', update_range)
         response = self._service.spreadsheets().values().update(
@@ -262,6 +284,8 @@ class Spreadsheet(object):
             body=body, valueInputOption='RAW').execute()
         if not response['updatedRows']:
             logging.error('Spreadsheet update failed (%s)', response)
+            raise SyncException(
+                'Spreadsheet update failed (%s)' % str(response))
 
     def update(self, data):
         """Updates the contents of the spreadsheet.
@@ -271,6 +295,9 @@ class Spreadsheet(object):
 
         Args:
           data: a list of dictionaries
+
+        Raises:
+           SyncException: The update failed.
         """
         updated_data = {d[KEYS[0]]: d for d in data}
         new_rows = []
@@ -318,6 +345,11 @@ def main(argv):  # pragma: no cover
     start_webserver_in_new_thread(args.webserver_port)
     # Repeatedly copy information from the datastore to the spreadsheet
     while True:
+        # This code may be subject to transient errors in cloud datastore or
+        # the sheets service. Intermittent failures of those services should
+        # not crash this client, so we catch all Exceptions and log them
+        # instead of crashing.
+        # pylint: disable=broad-except
         try:
             with RUNS.time():
                 # Download
@@ -325,8 +357,9 @@ def main(argv):  # pragma: no cover
                 # Upload
                 spreadsheet.update(data)
             SUCCESS.labels(message='success').inc()
-        except Exception as error:
+        except (SyncException, Exception) as error:
             SUCCESS.labels(message=str(error.message)).inc()
+        # pylint: enable=broad-except
         # Sleep
         sleep_time = random.expovariate(1.0 / args.expected_upload_interval)
         logging.info('Sleeping for %g seconds', sleep_time)
