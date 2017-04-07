@@ -271,9 +271,12 @@ class Spreadsheet(object):
         Raises:
            SyncException: The update failed.
         """
-        # Sheet ranges have the form: <worksheet name>!<col1>:<col2>
+        # Sheet ranges have the form: <worksheet name>!<col1><row1>:<col2><row2>
+	# Column names are alphabetical starting with 'A'.  The code below will
+	# break if the names go past 'Z'.
         # Row numbers are 1-indexed instead of zero-indexed and the first row
         # is reserved for the header.
+        assert len(header) < 26
         update_range = (self._worksheet +
                         '!A1:' + chr(ord('A') + len(header))
                         + str(len(rows) + 1))
@@ -358,10 +361,12 @@ def main(argv):  # pragma: no cover
                 spreadsheet.update(data)
             SUCCESS.labels(message='success').inc()
         except (SyncException, Exception) as error:
-            SUCCESS.labels(message=str(error.message)).inc()
+            logging.error('Sync failed: %s', error)
+            SUCCESS.labels(message=str(type(error))).inc()
         # pylint: enable=broad-except
-        # Sleep
-        sleep_time = random.expovariate(1.0 / args.expected_upload_interval)
+        # Sleep, but never for longer than an hour.
+        sleep_time = min(
+            random.expovariate(1.0 / args.expected_upload_interval), 3600)
         logging.info('Sleeping for %g seconds', sleep_time)
         with SLEEPS.time():
             time.sleep(sleep_time)
