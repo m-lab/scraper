@@ -272,8 +272,8 @@ class Spreadsheet(object):
            SyncException: The update failed.
         """
         # Sheet ranges have the form: <worksheet name>!<col1><row1>:<col2><row2>
-	# Column names are alphabetical starting with 'A'.  The code below will
-	# break if the names go past 'Z'.
+        # Column names are alphabetical starting with 'A'.  The code below will
+        # break if the names go past 'Z'.
         # Row numbers are 1-indexed instead of zero-indexed and the first row
         # is reserved for the header.
         assert len(header) < 26
