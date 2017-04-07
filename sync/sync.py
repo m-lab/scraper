@@ -46,12 +46,41 @@ import thread
 import time
 import traceback
 
-# pylint: disable=no-name-in-module, import-error
-# google.cloud seems to confuse pylint
+import apiclient
 from google.cloud import datastore
-# pylint: enable=no-name-in-module, import-error
+from oauth2client.contrib import gce
 
 import prometheus_client
+
+# Prometheus histogram buckets are web-response-sized by default, with lots of
+# sub-second buckets and very few multi-second buckets.  We need to change them
+# to rsync-download-sized, with lots of multi-second buckets up to even a
+# multi-hour bucket or two.  The precise choice of bucket values below is a
+# compromise between exponentially-sized bucket growth and a desire to make
+# sure that the bucket sizes are nice round time units.
+TIME_BUCKETS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0,
+                1800.0, 3600.0, 7200.0, float('inf'))
+
+# The monitoring variables exported by the prometheus_client
+# The prometheus_client libraries confuse the linter.
+# pylint: disable=no-value-for-parameter
+RUNS = prometheus_client.Histogram(
+    'spreadsheet_sync_runtime_seconds',
+    'How long each sheet sync took',
+    buckets=TIME_BUCKETS)
+SLEEPS = prometheus_client.Histogram(
+    'spreadsheet_sync_sleep_time_seconds',
+    'Sleep time between sheet update runs (should be an exp distribution)',
+    buckets=TIME_BUCKETS)
+# pylint: enable=no-value-for-parameter
+SUCCESS = prometheus_client.Counter(
+    'spreadsheet_sync_success',
+    'How many times has the sheet update succeeded and failed',
+    ['message'])
+
+
+class SyncException(Exception):
+    """The exceptions this system raises."""
 
 
 def parse_args(argv):
@@ -201,6 +230,96 @@ def start_webserver_in_new_thread(port):  # pragma: no cover
     thread.start_new_thread(httpd.serve_forever, ())
 
 
+class Spreadsheet(object):
+    """Updates a given spreadsheet to mirror cloud datastore."""
+
+    def __init__(self, service, sheet_id,
+                 worksheet='Drop box status (auto updated)'):
+        self._service = service
+        self._sheet_id = sheet_id
+        self._worksheet = worksheet
+
+    def _retrieve_sheet_data(self):
+        """Get the current data from the sheet.
+
+        Used to ensure that the update process does not re-order rows.
+
+        Raises:
+           SyncException: The update failed.
+        """
+        # Sheet ranges have the form: <worksheet name>!<col1>:<col2>
+        sheet_range = self._worksheet + '!A:' + chr(ord('A') + len(KEYS))
+        result = self._service.spreadsheets().values().get(
+            spreadsheetId=self._sheet_id, range=sheet_range).execute()
+        if 'values' not in result:
+            logging.error('Spreadsheet retrieve failed (%s)', result)
+            raise SyncException(
+                'Could not retrieve sheet data (%s)' % str(result))
+        rows = result.get('values')
+        if rows:
+            return rows[0], rows[1:]
+        else:
+            logging.warning('No data found on spreadsheet.')
+            return KEYS, []
+
+    def _update_spreadsheet(self, header, rows):
+        """Sets the contents of the spreadsheet.
+
+        Used to set the contents of the spreadsheet, overriding all existing
+        items in the sheet.
+
+        Raises:
+           SyncException: The update failed.
+        """
+        # Sheet ranges have the form: <worksheet name>!<col1><row1>:<col2><row2>
+        # Column names are alphabetical starting with 'A'.  The code below will
+        # break if the names go past 'Z'.
+        # Row numbers are 1-indexed instead of zero-indexed and the first row
+        # is reserved for the header.
+        assert len(header) < 26
+        update_range = (self._worksheet +
+                        '!A1:' + chr(ord('A') + len(header))
+                        + str(len(rows) + 1))
+        body = {'values': [header] + rows}
+        logging.info('About to update %s', update_range)
+        response = self._service.spreadsheets().values().update(
+            spreadsheetId=self._sheet_id, range=update_range,
+            body=body, valueInputOption='RAW').execute()
+        if not response['updatedRows']:
+            logging.error('Spreadsheet update failed (%s)', response)
+            raise SyncException(
+                'Spreadsheet update failed (%s)' % str(response))
+
+    def update(self, data):
+        """Updates the contents of the spreadsheet.
+
+        This respects the existing order of the rsync modules, but appends new
+        rows for any rsync modules that did not previously exist in the sheet.
+
+        Args:
+          data: a list of dictionaries
+
+        Raises:
+           SyncException: The update failed.
+        """
+        updated_data = {d[KEYS[0]]: d for d in data}
+        new_rows = []
+        header, old_rows = self._retrieve_sheet_data()
+        rsync_index = header.index(KEYS[0])
+        for old_row in old_rows:
+            rsync_url = old_row[rsync_index]
+            if rsync_url in updated_data:
+                new_row = [updated_data[rsync_url][h] for h in header]
+                new_rows.append(new_row)
+                del updated_data[rsync_url]
+            else:
+                new_rows.append(old_row)
+        for rsync_url in sorted(updated_data):
+            new_row = [updated_data[rsync_url][h] for h in header]
+            new_rows.append(new_row)
+        return self._update_spreadsheet(header, new_rows)
+
+
 def main(argv):  # pragma: no cover
     """Update the spreadsheet in a loop.
 
@@ -217,20 +336,41 @@ def main(argv):  # pragma: no cover
     args = parse_args(argv[1:])
     WebHandler.namespace = args.datastore_namespace
     # Set up spreadsheet client
-
+    creds = gce.AppAssertionCredentials()
+    discovery_url = ('https://sheets.googleapis.com/$discovery/rest?'
+                     'version=v4')
+    sheets_service = apiclient.discovery.build(
+        'sheets', 'v4', discoveryServiceUrl=discovery_url,
+        credentials=creds, cache_discovery=False)
+    spreadsheet = Spreadsheet(sheets_service, args.spreadsheet)
     # Set up the monitoring
     prometheus_client.start_http_server(args.prometheus_port)
     start_webserver_in_new_thread(args.webserver_port)
     # Repeatedly copy information from the datastore to the spreadsheet
     while True:
-        # Download
-        data = get_fleet_data(args.datastore_namespace)
-        # Upload
-
-        # Sleep
-        sleep_time = random.expovariate(1.0 / args.expected_upload_interval)
+        # This code may be subject to transient errors in cloud datastore or
+        # the sheets service. Intermittent failures of those services should
+        # not crash this client, so we catch all Exceptions and log them
+        # instead of crashing.
+        # pylint: disable=broad-except
+        try:
+            with RUNS.time():
+                # Download
+                data = get_fleet_data(args.datastore_namespace)
+                # Upload
+                spreadsheet.update(data)
+            SUCCESS.labels(message='success').inc()
+        except (SyncException, Exception) as error:
+            logging.error('Sync failed: %s', error)
+            SUCCESS.labels(message=str(type(error))).inc()
+        # pylint: enable=broad-except
+        # Sleep, but never for longer than an hour.
+        sleep_time = min(
+            random.expovariate(1.0 / args.expected_upload_interval), 3600)
         logging.info('Sleeping for %g seconds', sleep_time)
-        time.sleep(sleep_time)
+        with SLEEPS.time():
+            time.sleep(sleep_time)
+
 
 if __name__ == '__main__':  # pragma: no cover
     main(sys.argv)
