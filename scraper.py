@@ -584,8 +584,7 @@ class SyncStatus(object):
             value[SyncStatus.DEBUG_MESSAGE_KEY] = u''
             value[SyncStatus.LAST_COLLECTION_KEY] = u''
             value[SyncStatus.MTIME_KEY] = 0
-        # Datastore values can't be more than 1500 bytes
-        value[entry_key] = entry_value[:1400]
+        value[entry_key] = entry_value
         self._client.put(value)
 
     def update_last_archived_date(self, date):
@@ -595,6 +594,7 @@ class SyncStatus(object):
 
     def update_debug_message(self, message):
         """Updates the debug message in cloud datastore."""
+        message = message[:1400]  # Datastore has a 1500 byte max
         self.update_data(self.DEBUG_MESSAGE_KEY, unicode(message, 'UTF-8'))
 
     def update_last_collection(self):
