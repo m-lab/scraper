@@ -603,6 +603,15 @@ BADBADBAD
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
 
+    @mock.patch.object(scraper.SyncStatus, 'update_data')
+    def test_update_debug_msg_too_large(self, patched_update_data):
+        status = scraper.SyncStatus(None, None)
+        status.update_debug_message('m' * 1600)
+        patched_update_data.assert_called_once()
+        self.assertEqual(type(patched_update_data.call_args[0][1]),
+                         unicode)
+        self.assertTrue(len(patched_update_data.call_args[0][1]) < 1500)
+
     @freezegun.freeze_time('2016-01-28 07:43:16 UTC')
     @mock.patch.object(scraper.SyncStatus, 'update_data')
     def test_update_last_collection(self, patched_update_data):
