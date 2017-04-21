@@ -182,7 +182,7 @@ def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
             try:
                 logging.info('Synching %d files', len(filenames))
                 command = ([nocache_binary, rsync_binary] + RSYNC_ARGS +
-                           ['-from0', '--files-from', temp.name, rsync_url,
+                           ['--from0', '--files-from', temp.name, rsync_url,
                             destination])
                 subprocess.check_call(command)
             except subprocess.CalledProcessError as error:
