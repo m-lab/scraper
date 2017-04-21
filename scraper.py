@@ -584,7 +584,8 @@ class SyncStatus(object):
             value[SyncStatus.DEBUG_MESSAGE_KEY] = u''
             value[SyncStatus.LAST_COLLECTION_KEY] = u''
             value[SyncStatus.MTIME_KEY] = 0
-        value[entry_key] = entry_value
+        # Datastore values can't be more than 1500 bytes
+        value[entry_key] = entry_value[:1400]
         self._client.put(value)
 
     def update_last_archived_date(self, date):
