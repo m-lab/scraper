@@ -320,6 +320,22 @@ BADBADBAD
             shutil.rmtree(temp_d)
 
     @testfixtures.log_capture()
+    def test_create_temporary_tarfiles_skips_baregz(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                os.makedirs('2016/01/28')
+                file('2016/01/28/.gz', 'w').write('hello')
+                gen = scraper.create_temporary_tarfiles(
+                    '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', '.',
+                    datetime.date(2016, 1, 28),
+                    'ndt.iupui.mlab1.xxx02.measurement-lab.org', 'ndt', 10000)
+                with self.assertRaises(StopIteration):
+                    gen.next()
+        finally:
+            shutil.rmtree(temp_d)
+
+    @testfixtures.log_capture()
     def test_create_tarfile_fails_on_existing_tarfile(self, log):
         try:
             temp_d = tempfile.mkdtemp()
@@ -448,6 +464,47 @@ BADBADBAD
                     '20160128T000000Z-mlab9-dne04-exper-0001.tgz'
                 ]).strip()
                 self.assertEqual(table2, '2016/01/28/test2.txt')
+                with self.assertRaises(StopIteration):
+                    gen.next()
+        finally:
+            shutil.rmtree(temp_d)
+
+    def test_create_tarfiles_multiple_small_files_in_dirs(self):
+        try:
+            temp_d = tempfile.mkdtemp()
+            with scraper.chdir(temp_d):
+                os.makedirs('2016/01/28/bar')
+                file('2016/01/28/bar/test1.txt', 'w').write('hello')
+                file('2016/01/28/bar/test2.txt', 'w').write('goodbye')
+            # By setting the max filesize as 4 bytes, we will end up creating a
+            # separate tarfile for each test file.
+            files = [f for f, _t in scraper.create_temporary_tarfiles(
+                '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', temp_d,
+                datetime.date(2016, 1, 28), 'mlab9.dne04.measurement-lab.org',
+                'exper', 4)]
+            self.assertEqual(files, [
+                '20160128T000000Z-mlab9-dne04-exper-0000.tgz',
+                '20160128T000000Z-mlab9-dne04-exper-0001.tgz'
+            ])
+            with scraper.chdir(temp_d):
+                gen = scraper.create_temporary_tarfiles(
+                    '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', temp_d,
+                    datetime.date(2016, 1, 28),
+                    'mlab9.dne04.measurement-lab.org', 'exper', 4)
+                gen.next()
+                table1 = subprocess.check_output([
+                    '/bin/tar', 'tfz',
+                    '20160128T000000Z-mlab9-dne04-exper-0000.tgz'
+                ]).strip()
+                self.assertEqual(table1, '2016/01/28/bar/test1.txt')
+                gen.next()
+                self.assertFalse(os.path.exists(
+                    '20160128T000000Z-mlab9-dne04-exper-0000.tgz'))
+                table2 = subprocess.check_output([
+                    '/bin/tar', 'tfz',
+                    '20160128T000000Z-mlab9-dne04-exper-0001.tgz'
+                ]).strip()
+                self.assertEqual(table2, '2016/01/28/bar/test2.txt')
                 with self.assertRaises(StopIteration):
                     gen.next()
         finally:
