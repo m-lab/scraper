@@ -338,7 +338,7 @@ def attempt_decompression(nocache_binary, gunzip_binary, filename):
 
 def all_files(directory):
     """Lists all files in all subdirectories beneath the current dir."""
-    for root, dirs, files in os.walk(directory):
+    for root, _dirs, files in os.walk(directory):
         for filename in files:
             yield os.path.join(root, filename)
 
@@ -682,8 +682,8 @@ def download(args, rsync_url, sync_status, destination):  # pragma: no cover
     """
     sync_status.update_last_collection()
     last_archived_date = sync_status.get_last_archived_date()
-    all_files = list_rsync_files(args.rsync_binary, rsync_url)
-    newer_files = remove_older_files(last_archived_date, all_files)
+    all_remote_files = list_rsync_files(args.rsync_binary, rsync_url)
+    newer_files = remove_older_files(last_archived_date, all_remote_files)
     download_files(args.nocache_binary, args.rsync_binary, rsync_url,
                    newer_files, destination)
 
