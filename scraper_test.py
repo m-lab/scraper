@@ -225,41 +225,6 @@ BADBADBAD
         self.assertEqual(scraper.max_new_archived_date(),
                          datetime.date(2016, 1, 26))
 
-    def test_find_all_days_to_upload_empty_okay(self):
-        try:
-            temp_d = tempfile.mkdtemp()
-            date = datetime.date(2016, 7, 6)
-            to_upload = list(scraper.find_all_days_to_upload(temp_d, date))
-            self.assertEqual(to_upload, [])
-        finally:
-            shutil.rmtree(temp_d)
-
-    @testfixtures.log_capture()
-    def test_find_all_days_to_upload(self, log):
-        try:
-            temp_d = tempfile.mkdtemp()
-            date = datetime.date(2016, 7, 6)
-            with scraper.chdir(temp_d):
-                open('9000', 'w').write('hello\n')
-                os.makedirs('2015/10/31')
-                open('2015/9000', 'w').write('hello\n')
-                open('2015/10/9000', 'w').write('hello\n')
-                os.makedirs('2015/10/9001')
-                os.makedirs('2016/07/05')
-                os.makedirs('2016/07/07')
-                os.makedirs('2016/07/monkey')
-                os.makedirs('2016/monkey/monkey')
-                os.makedirs('monkey/monkey/monkey')
-                os.makedirs('2016/07/06')
-            to_upload = list(scraper.find_all_days_to_upload(temp_d, date))
-            self.assertEqual(to_upload, [
-                datetime.date(2015, 10, 31), datetime.date(2016, 7, 5),
-                datetime.date(2016, 7, 6)
-            ])
-        finally:
-            shutil.rmtree(temp_d)
-        self.assertIn('ERROR', [x.levelname for x in log.records])
-
     def test_chdir(self):
         try:
             temp_d = tempfile.mkdtemp()
@@ -298,160 +263,6 @@ BADBADBAD
         self.assertEqual(
             scraper.node_and_site('mlab1.atl02.measurement-lab.org'),
             ('mlab1', 'atl02'))
-
-    def test_create_tarfile(self):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                os.makedirs('2016/01/28')
-                file('2016/01/28/test1.txt', 'w').write('hello')
-                file('2016/01/28/test2.txt', 'w').write('goodbye')
-                scraper.create_tarfile(
-                    '/usr/bin/nocache', '/bin/tar', 'test.tgz',
-                    ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
-                shutil.rmtree('2016')
-                self.assertFalse(os.path.exists('2016'))
-                self.assertTrue(os.path.exists('test.tgz'))
-                subprocess.check_call(['/bin/tar', 'xfz', 'test.tgz'])
-                self.assertTrue(os.path.exists('2016'))
-                self.assertEqual(file('2016/01/28/test1.txt').read(), 'hello')
-                self.assertEqual(file('2016/01/28/test2.txt').read(), 'goodbye')
-        finally:
-            shutil.rmtree(temp_d)
-
-    @testfixtures.log_capture()
-    def test_create_tarfile_fails_on_existing_tarfile(self, log):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                os.makedirs('2016/01/28')
-                file('2016/01/28/test1.txt', 'w').write('hello')
-                file('2016/01/28/test2.txt', 'w').write('goodbye')
-                file('test.tgz', 'w').write('in the way')
-                self.assertEqual(file('test.tgz').read(), 'in the way')
-                with self.assertRaises(SystemExit):
-                    scraper.create_tarfile(
-                        '/usr/bin/nocache', '/bin/tar', 'test.tgz',
-                        ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
-        finally:
-            shutil.rmtree(temp_d)
-        self.assertIn('ERROR', [x.levelname for x in log.records])
-
-    @testfixtures.log_capture()
-    def test_create_tarfile_fails_on_tar_failure(self, log):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                os.makedirs('2016/01/28')
-                file('2016/01/28/test1.txt', 'w').write('hello')
-                file('2016/01/28/test2.txt', 'w').write('goodbye')
-                with self.assertRaises(SystemExit):
-                    scraper.create_tarfile(
-                        '/usr/bin/nocache', '/bin/false', 'test.tgz',
-                        ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
-        finally:
-            shutil.rmtree(temp_d)
-        self.assertIn('ERROR', [x.levelname for x in log.records])
-
-    @testfixtures.log_capture()
-    def test_create_tarfile_fails_when_file_is_missing(self, log):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                os.makedirs('2016/01/28')
-                file('2016/01/28/test1.txt', 'w').write('hello')
-                file('2016/01/28/test2.txt', 'w').write('goodbye')
-                with self.assertRaises(SystemExit):
-                    # Executes successfully, but fails to create the tarfile.
-                    scraper.create_tarfile(
-                        '/usr/bin/nocache', '/bin/true', 'test.tgz',
-                        ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
-        finally:
-            shutil.rmtree(temp_d)
-        self.assertIn('ERROR', [x.levelname for x in log.records])
-
-    def test_create_tarfiles(self):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                os.makedirs('2016/01/28')
-                with scraper.chdir('2016/01/28'):
-                    file('test1.txt', 'w').write('hello')
-                    file('test2.txt', 'w').write('goodbye')
-                    file('test3.txt', 'w').write('compressed')
-                    subprocess.check_call(['/bin/gzip', 'test3.txt'])
-                    self.assertFalse(os.path.exists('test3.txt'))
-                    self.assertTrue(os.path.exists('test3.txt.gz'))
-            files = [f for f, _t in scraper.create_temporary_tarfiles(
-                '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', temp_d,
-                datetime.date(2016, 1, 28), 'mlab9.dne04.measurement-lab.org',
-                'exper', 100000)]
-            self.assertEqual(files,
-                             ['20160128T000000Z-mlab9-dne04-exper-0000.tgz'])
-            with scraper.chdir(temp_d):
-                gen = scraper.create_temporary_tarfiles(
-                    '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', temp_d,
-                    datetime.date(2016, 1, 28),
-                    'mlab9.dne04.measurement-lab.org', 'exper', 100000)
-                fname, _ = gen.next()
-                self.assertTrue(os.path.isfile(fname))
-                shutil.rmtree('2016')
-                self.assertFalse(os.path.exists('2016/01/28/test1.txt'))
-                self.assertFalse(os.path.exists('2016/01/28/test2.txt'))
-                self.assertFalse(os.path.exists('2016/01/28/test3.txt'))
-                self.assertFalse(os.path.exists('2016/01/28/test3.txt.gz'))
-                subprocess.check_call([
-                    '/bin/tar', 'xfz',
-                    '20160128T000000Z-mlab9-dne04-exper-0000.tgz'
-                ])
-                self.assertTrue(os.path.exists('2016/01/28/test1.txt'))
-                self.assertTrue(os.path.exists('2016/01/28/test2.txt'))
-                self.assertTrue(os.path.exists('2016/01/28/test3.txt'))
-                with self.assertRaises(StopIteration):
-                    gen.next()
-        finally:
-            shutil.rmtree(temp_d)
-
-    def test_create_tarfiles_multiple_small_files(self):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                os.makedirs('2016/01/28')
-                file('2016/01/28/test1.txt', 'w').write('hello')
-                file('2016/01/28/test2.txt', 'w').write('goodbye')
-            # By setting the max filesize as 4 bytes, we will end up creating a
-            # separate tarfile for each test file.
-            files = [f for f, _t in scraper.create_temporary_tarfiles(
-                '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', temp_d,
-                datetime.date(2016, 1, 28), 'mlab9.dne04.measurement-lab.org',
-                'exper', 4)]
-            self.assertEqual(files, [
-                '20160128T000000Z-mlab9-dne04-exper-0000.tgz',
-                '20160128T000000Z-mlab9-dne04-exper-0001.tgz'
-            ])
-            with scraper.chdir(temp_d):
-                gen = scraper.create_temporary_tarfiles(
-                    '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', temp_d,
-                    datetime.date(2016, 1, 28),
-                    'mlab9.dne04.measurement-lab.org', 'exper', 4)
-                gen.next()
-                table1 = subprocess.check_output([
-                    '/bin/tar', 'tfz',
-                    '20160128T000000Z-mlab9-dne04-exper-0000.tgz'
-                ]).strip()
-                self.assertEqual(table1, '2016/01/28/test1.txt')
-                gen.next()
-                self.assertFalse(os.path.exists(
-                    '20160128T000000Z-mlab9-dne04-exper-0000.tgz'))
-                table2 = subprocess.check_output([
-                    '/bin/tar', 'tfz',
-                    '20160128T000000Z-mlab9-dne04-exper-0001.tgz'
-                ]).strip()
-                self.assertEqual(table2, '2016/01/28/test2.txt')
-                with self.assertRaises(StopIteration):
-                    gen.next()
-        finally:
-            shutil.rmtree(temp_d)
 
     def test_get_data_caches_key(self):
         client = mock.Mock()
@@ -557,31 +368,6 @@ BADBADBAD
         with self.assertRaises(scraper.cloud_exceptions.ServiceUnavailable):
             status.update_data('key', 'value')
 
-    def test_remove_datafiles_all_finished(self):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                os.makedirs('2009/02/28')
-                file('2009/02/28/data.txt', 'w').write('test')
-            scraper.remove_datafiles(temp_d, datetime.date(2009, 2, 28))
-            self.assertEqual([], os.listdir(temp_d))
-        finally:
-            shutil.rmtree(temp_d)
-
-    def test_remove_datafiles_not_all_finished(self):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                os.makedirs('2009/02/27')
-                file('2009/02/27/data.txt', 'w').write('test')
-                os.makedirs('2009/02/28')
-                file('2009/02/28/data2.txt', 'w').write('test')
-            scraper.remove_datafiles(temp_d, datetime.date(2009, 2, 27))
-            self.assertEqual(
-                ['data2.txt'], os.listdir(os.path.join(temp_d, '2009/02/28')))
-        finally:
-            shutil.rmtree(temp_d)
-
     def test_assert_mlab_hostname(self):
         for good_name in ['mlab4.sea02.measurement-lab.org',
                           'ndt.iupui.mlab1.nuq0t.measurement-lab.org',
@@ -644,83 +430,266 @@ BADBADBAD
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
 
-    def test_attempt_decompression(self):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                file('test', 'w').write('testdata')
-                subprocess.check_call(['/bin/gzip', 'test'])
-                self.assertTrue(os.path.exists('test.gz'))
-                self.assertFalse(os.path.exists('test'))
-                self.assertEqual(
-                    'test',
-                    scraper.attempt_decompression('/usr/bin/nocache',
-                                                  '/bin/gunzip', 'test.gz'))
-                self.assertFalse(os.path.exists('test.gz'))
-                self.assertTrue(os.path.exists('test'))
-        finally:
-            shutil.rmtree(temp_d)
-
-    @testfixtures.log_capture()
-    def test_attempt_decompression_gunzip_failure(self, log):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                file('test', 'w').write('testdata')
-                subprocess.check_call(['/bin/gzip', 'test'])
-                self.assertTrue(os.path.exists('test.gz'))
-                self.assertFalse(os.path.exists('test'))
-                self.assertEqual(
-                    'test.gz',
-                    scraper.attempt_decompression('/usr/bin/nocache',
-                                                  '/bin/false', 'test.gz'))
-        finally:
-            shutil.rmtree(temp_d)
-        self.assertIn('ERROR', [x.levelname for x in log.records])
-
-    @testfixtures.log_capture()
-    def test_attempt_decompression_disappearing_file(self, log):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                file('test', 'w').write('testdata')
-                subprocess.check_call(['/bin/gzip', 'test'])
-                self.assertTrue(os.path.exists('test.gz'))
-                self.assertFalse(os.path.exists('test'))
-                self.assertEqual(
-                    'test.gz',
-                    scraper.attempt_decompression('/usr/bin/nocache',
-                                                  '/bin/true', 'test.gz'))
-        finally:
-            shutil.rmtree(temp_d)
-        self.assertIn('ERROR', [x.levelname for x in log.records])
-
-    @testfixtures.log_capture()
-    def test_attempt_decompression_no_clobber(self, log):
-        try:
-            temp_d = tempfile.mkdtemp()
-            with scraper.chdir(temp_d):
-                file('test', 'w').write('testdata')
-                subprocess.check_call(['/bin/gzip', 'test'])
-                file('test', 'w').write('testdata')
-                self.assertTrue(os.path.exists('test.gz'))
-                self.assertTrue(os.path.exists('test'))
-                self.assertEqual(
-                    'test',
-                    scraper.attempt_decompression('/usr/bin/nocache',
-                                                  '/bin/gunzip', 'test.gz'))
-                self.assertTrue(os.path.exists('test.gz'))
-                self.assertTrue(os.path.exists('test'))
-        finally:
-            shutil.rmtree(temp_d)
-        self.assertIn('WARNING', [x.levelname for x in log.records])
-
     def test_run_scraper_has_docstring(self):
         # run_scraper should only be tested by end-to-end tests. However, by
         # importing it above we can at least verify that it can be parsed by
         # the python compiler.  Then, in order to not trigger the "unused
         # import" linter message, we should verify something about run_scraper.
         self.assertIsNotNone(run_scraper.__doc__)
+
+
+class TestScraperInTempDir(unittest.TestCase):
+
+    def setUp(self):
+        # If you depend on log messages, use testfixtures.log_capture() to test
+        # for their presence and assert their contents.  For the purposes of
+        # the test runner, log messages on stdout/stderr are spam.
+        logging.getLogger().setLevel(logging.WARNING)
+        self._old_cwd = os.getcwd()
+        self.temp_d = tempfile.mkdtemp()
+        os.chdir(self.temp_d)
+
+    def tearDown(self):
+        os.chdir(self._old_cwd)
+        shutil.rmtree(self.temp_d)
+
+    def test_find_all_days_to_upload_empty_okay(self):
+        date = datetime.date(2016, 7, 6)
+        to_upload = list(scraper.find_all_days_to_upload(self.temp_d, date))
+        self.assertEqual(to_upload, [])
+
+    @testfixtures.log_capture()
+    def test_find_all_days_to_upload(self, log):
+        date = datetime.date(2016, 7, 6)
+        open('9000', 'w').write('hello\n')
+        os.makedirs('2015/10/31')
+        open('2015/9000', 'w').write('hello\n')
+        open('2015/10/9000', 'w').write('hello\n')
+        os.makedirs('2015/10/9001')
+        os.makedirs('2016/07/05')
+        os.makedirs('2016/07/07')
+        os.makedirs('2016/07/monkey')
+        os.makedirs('2016/monkey/monkey')
+        os.makedirs('monkey/monkey/monkey')
+        os.makedirs('2016/07/06')
+        to_upload = list(scraper.find_all_days_to_upload(self.temp_d, date))
+        self.assertEqual(to_upload, [
+            datetime.date(2015, 10, 31), datetime.date(2016, 7, 5),
+            datetime.date(2016, 7, 6)
+        ])
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+
+    def test_create_tarfile(self):
+        os.makedirs('2016/01/28')
+        file('2016/01/28/test1.txt', 'w').write('hello')
+        file('2016/01/28/test2.txt', 'w').write('goodbye')
+        scraper.create_tarfile(
+            '/usr/bin/nocache', '/bin/tar', 'test.tgz',
+            ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+        shutil.rmtree('2016')
+        self.assertFalse(os.path.exists('2016'))
+        self.assertTrue(os.path.exists('test.tgz'))
+        subprocess.check_call(['/bin/tar', 'xfz', 'test.tgz'])
+        self.assertTrue(os.path.exists('2016'))
+        self.assertEqual(file('2016/01/28/test1.txt').read(), 'hello')
+        self.assertEqual(file('2016/01/28/test2.txt').read(), 'goodbye')
+
+    @testfixtures.log_capture()
+    def test_create_temporary_tarfiles_skips_baregz(self):
+        os.makedirs('2016/01/28')
+        file('2016/01/28/.gz', 'w').write('hello')
+        gen = scraper.create_temporary_tarfiles(
+            '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', '.',
+            datetime.date(2016, 1, 28),
+            'ndt.iupui.mlab1.xxx02.measurement-lab.org', 'ndt', 10000)
+        with self.assertRaises(StopIteration):
+            gen.next()
+
+    @testfixtures.log_capture()
+    def test_create_tarfile_fails_on_existing_tarfile(self, log):
+        os.makedirs('2016/01/28')
+        file('2016/01/28/test1.txt', 'w').write('hello')
+        file('2016/01/28/test2.txt', 'w').write('goodbye')
+        file('test.tgz', 'w').write('in the way')
+        self.assertEqual(file('test.tgz').read(), 'in the way')
+        with self.assertRaises(SystemExit):
+            scraper.create_tarfile(
+                '/usr/bin/nocache', '/bin/tar', 'test.tgz',
+                ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+
+    @testfixtures.log_capture()
+    def test_create_tarfile_fails_on_tar_failure(self, log):
+        os.makedirs('2016/01/28')
+        file('2016/01/28/test1.txt', 'w').write('hello')
+        file('2016/01/28/test2.txt', 'w').write('goodbye')
+        with self.assertRaises(SystemExit):
+            scraper.create_tarfile(
+                '/usr/bin/nocache', '/bin/false', 'test.tgz',
+                ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+
+    @testfixtures.log_capture()
+    def test_create_tarfile_fails_when_file_is_missing(self, log):
+        os.makedirs('2016/01/28')
+        file('2016/01/28/test1.txt', 'w').write('hello')
+        file('2016/01/28/test2.txt', 'w').write('goodbye')
+        with self.assertRaises(SystemExit):
+            # Executes successfully, but fails to create the tarfile.
+            scraper.create_tarfile(
+                '/usr/bin/nocache', '/bin/true', 'test.tgz',
+                ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+
+    def test_create_tarfiles(self):
+        os.makedirs('2016/01/28')
+        with scraper.chdir('2016/01/28'):
+            file('test1.txt', 'w').write('hello')
+            file('test2.txt', 'w').write('goodbye')
+            file('test3.txt', 'w').write('compressed')
+            subprocess.check_call(['/bin/gzip', 'test3.txt'])
+            self.assertFalse(os.path.exists('test3.txt'))
+            self.assertTrue(os.path.exists('test3.txt.gz'))
+        gen = scraper.create_temporary_tarfiles(
+            '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', self.temp_d,
+            datetime.date(2016, 1, 28),
+            'mlab9.dne04.measurement-lab.org', 'exper', 100000)
+        fname, _ = gen.next()
+        self.assertTrue(os.path.isfile(fname))
+        shutil.rmtree('2016')
+        self.assertFalse(os.path.exists('2016/01/28/test1.txt'))
+        self.assertFalse(os.path.exists('2016/01/28/test2.txt'))
+        self.assertFalse(os.path.exists('2016/01/28/test3.txt'))
+        self.assertFalse(os.path.exists('2016/01/28/test3.txt.gz'))
+        subprocess.check_call([
+            '/bin/tar', 'xfz',
+            '20160128T000000Z-mlab9-dne04-exper-0000.tgz'
+        ])
+        self.assertTrue(os.path.exists('2016/01/28/test1.txt'))
+        self.assertTrue(os.path.exists('2016/01/28/test2.txt'))
+        self.assertTrue(os.path.exists('2016/01/28/test3.txt'))
+        with self.assertRaises(StopIteration):
+            gen.next()
+
+    def test_create_tarfiles_multiple_small_files(self):
+        os.makedirs('2016/01/28')
+        file('2016/01/28/test1.txt', 'w').write('hello')
+        file('2016/01/28/test2.txt', 'w').write('goodbye')
+        # By setting the max filesize as 4 bytes, we will end up creating a
+        # separate tarfile for each test file.
+        gen = scraper.create_temporary_tarfiles(
+            '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', self.temp_d,
+            datetime.date(2016, 1, 28),
+            'mlab9.dne04.measurement-lab.org', 'exper', 4)
+        gen.next()
+        table1 = subprocess.check_output([
+            '/bin/tar', 'tfz',
+            '20160128T000000Z-mlab9-dne04-exper-0000.tgz'
+        ]).strip()
+        self.assertEqual(table1, '2016/01/28/test1.txt')
+        gen.next()
+        self.assertFalse(os.path.exists(
+            '20160128T000000Z-mlab9-dne04-exper-0000.tgz'))
+        table2 = subprocess.check_output([
+            '/bin/tar', 'tfz',
+            '20160128T000000Z-mlab9-dne04-exper-0001.tgz'
+        ]).strip()
+        self.assertEqual(table2, '2016/01/28/test2.txt')
+        with self.assertRaises(StopIteration):
+            gen.next()
+
+    def test_create_tarfiles_multiple_small_files_in_dirs(self):
+        os.makedirs('2016/01/28/bar')
+        file('2016/01/28/bar/test1.txt', 'w').write('hello')
+        file('2016/01/28/bar/test2.txt', 'w').write('goodbye')
+        # By setting the max filesize as 4 bytes, we will end up creating a
+        # separate tarfile for each test file.
+        gen = scraper.create_temporary_tarfiles(
+            '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', self.temp_d,
+            datetime.date(2016, 1, 28),
+            'mlab9.dne04.measurement-lab.org', 'exper', 4)
+        gen.next()
+        table1 = subprocess.check_output([
+            '/bin/tar', 'tfz',
+            '20160128T000000Z-mlab9-dne04-exper-0000.tgz'
+        ]).strip()
+        self.assertEqual(table1, '2016/01/28/bar/test1.txt')
+        gen.next()
+        self.assertFalse(os.path.exists(
+            '20160128T000000Z-mlab9-dne04-exper-0000.tgz'))
+        table2 = subprocess.check_output([
+            '/bin/tar', 'tfz',
+            '20160128T000000Z-mlab9-dne04-exper-0001.tgz'
+        ]).strip()
+        self.assertEqual(table2, '2016/01/28/bar/test2.txt')
+        with self.assertRaises(StopIteration):
+            gen.next()
+
+    def test_remove_datafiles_all_finished(self):
+        os.makedirs('2009/02/28')
+        file('2009/02/28/data.txt', 'w').write('test')
+        scraper.remove_datafiles(self.temp_d, datetime.date(2009, 2, 28))
+        self.assertEqual([], os.listdir(self.temp_d))
+
+    def test_remove_datafiles_not_all_finished(self):
+        os.makedirs('2009/02/27')
+        file('2009/02/27/data.txt', 'w').write('test')
+        os.makedirs('2009/02/28')
+        file('2009/02/28/data2.txt', 'w').write('test')
+        scraper.remove_datafiles(self.temp_d, datetime.date(2009, 2, 27))
+        self.assertEqual(
+            ['data2.txt'], os.listdir(os.path.join(self.temp_d, '2009/02/28')))
+
+    def test_attempt_decompression(self):
+        file('test', 'w').write('testdata')
+        subprocess.check_call(['/bin/gzip', 'test'])
+        self.assertTrue(os.path.exists('test.gz'))
+        self.assertFalse(os.path.exists('test'))
+        self.assertEqual(
+            'test',
+            scraper.attempt_decompression('/usr/bin/nocache',
+                                          '/bin/gunzip', 'test.gz'))
+        self.assertFalse(os.path.exists('test.gz'))
+        self.assertTrue(os.path.exists('test'))
+
+    @testfixtures.log_capture()
+    def test_attempt_decompression_gunzip_failure(self, log):
+        file('test', 'w').write('testdata')
+        subprocess.check_call(['/bin/gzip', 'test'])
+        self.assertTrue(os.path.exists('test.gz'))
+        self.assertFalse(os.path.exists('test'))
+        self.assertEqual(
+            'test.gz',
+            scraper.attempt_decompression('/usr/bin/nocache',
+                                          '/bin/false', 'test.gz'))
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+
+    @testfixtures.log_capture()
+    def test_attempt_decompression_no_clobber(self, log):
+        file('test', 'w').write('testdata')
+        subprocess.check_call(['/bin/gzip', 'test'])
+        file('test', 'w').write('testdata')
+        self.assertTrue(os.path.exists('test.gz'))
+        self.assertTrue(os.path.exists('test'))
+        self.assertEqual(
+            'test',
+            scraper.attempt_decompression('/usr/bin/nocache',
+                                          '/bin/gunzip', 'test.gz'))
+        self.assertTrue(os.path.exists('test.gz'))
+        self.assertTrue(os.path.exists('test'))
+        self.assertIn('WARNING', [x.levelname for x in log.records])
+
+    @testfixtures.log_capture()
+    def test_attempt_decompression_disappearing_file(self, log):
+        file('test', 'w').write('testdata')
+        subprocess.check_call(['/bin/gzip', 'test'])
+        self.assertTrue(os.path.exists('test.gz'))
+        self.assertFalse(os.path.exists('test'))
+        self.assertEqual(
+            'test.gz',
+            scraper.attempt_decompression('/usr/bin/nocache',
+                                          '/bin/true', 'test.gz'))
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
 
 if __name__ == '__main__':  # pragma: no cover

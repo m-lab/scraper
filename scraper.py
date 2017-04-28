@@ -336,6 +336,13 @@ def attempt_decompression(nocache_binary, gunzip_binary, filename):
     return basename
 
 
+def all_files(directory):
+    """Lists all files in all subdirectories beneath the current dir."""
+    for root, _dirs, files in os.walk(directory):
+        for filename in files:
+            yield os.path.join(root, filename)
+
+
 def create_temporary_tarfiles(nocache_binary, tar_binary, gunzip_binary,
                               directory, day, host, experiment,
                               max_uncompressed_size):
@@ -370,8 +377,7 @@ def create_temporary_tarfiles(nocache_binary, tar_binary, gunzip_binary,
     tarfile_index = 0
     max_mtime = 0
     with chdir(directory):
-        for filename in sorted(os.listdir(day_dir)):
-            filename = os.path.join(day_dir, filename)
+        for filename in sorted(all_files(day_dir)):
             # TODO(https://github.com/m-lab/scraper/issues/7) compression
             # Stop with this compression and decompression nonsense by deleting
             # all code between this comment and the one that says "END TODO"
@@ -379,6 +385,8 @@ def create_temporary_tarfiles(nocache_binary, tar_binary, gunzip_binary,
                 filename = attempt_decompression(nocache_binary, gunzip_binary,
                                                  filename)
             # END TODO(https://github.com/m-lab/scraper/issues/7)
+            if not os.path.isfile(filename):
+                continue
             filestat = os.stat(filename)
             filesize = filestat.st_size
             max_mtime = max(max_mtime, int(filestat.st_mtime))
@@ -674,8 +682,8 @@ def download(args, rsync_url, sync_status, destination):  # pragma: no cover
     """
     sync_status.update_last_collection()
     last_archived_date = sync_status.get_last_archived_date()
-    all_files = list_rsync_files(args.rsync_binary, rsync_url)
-    newer_files = remove_older_files(last_archived_date, all_files)
+    all_remote_files = list_rsync_files(args.rsync_binary, rsync_url)
+    newer_files = remove_older_files(last_archived_date, all_remote_files)
     download_files(args.nocache_binary, args.rsync_binary, rsync_url,
                    newer_files, destination)
 
