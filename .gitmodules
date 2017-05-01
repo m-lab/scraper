@@ -4,3 +4,6 @@
 [submodule "operator"]
 	path = operator
 	url = https://github.com/m-lab/operator.git
+[submodule "git-hooks"]
+	path = git-hooks
+	url = https://github.com/m-lab/git-hooks.git
