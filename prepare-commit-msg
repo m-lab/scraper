@@ -26,24 +26,26 @@ if [[ -z $(which $COVERAGE) ]]; then
   COVERAGE=python-coverage
 fi
 
+PYTHONFILES=$(git ls-files | grep '\.py$')
+
 (
   echo 'Test coverage is as follows:'
   $COVERAGE report -m
   echo
   echo 'The Python linter found the following issues:'
-  pylint --rcfile=pylintrc --reports=n $(find . -name \*.py)
+  pylint --rcfile=pylintrc --reports=n ${PYTHONFILES}
   echo
   echo 'A selection of Python formatters recommend the following changes:'
   echo '  unify :'
-  unify $(find . -name \*.py)
+  unify ${PYTHONFILES}
   echo '  autoflake :'
-  autoflake $(find . -name \*.py)
+  autoflake ${PYTHONFILES}
   echo '  autopep8 --max-line-length 80 -d :'
-  autopep8 --max-line-length 80 -d $(find . -name \*.py)
+  autopep8 --max-line-length 80 -d ${PYTHONFILES}
   echo '  docformatter --no-blank --wrap-summaries 80 --wrap-descriptions 80 :'
   docformatter --no-blank --wrap-summaries 80 --wrap-descriptions 80 \
-      $(find . -name \*.py)
-) | ( 
+      ${PYTHONFILES}
+) | (
   # If a filename argument was passed in, comment all output and append it to
   # that file.  Otherwise just allow the output of the above commands to go to
   # stdout.
