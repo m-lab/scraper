@@ -18,8 +18,8 @@ fi
 pylint --rcfile=pylintrc \
        --output-format=colorized \
        --reports=n \
-       $(find . -name \*.py)
-# pylint return codes described here: 
+       $(git ls-files | grep '\.py$')
+# pylint return codes described here:
 #   https://lists.logilab.org/pipermail/python-projects/2009-November/002068.html
 # We only care about fatal messages and errors, the existence of which are
 # assigned to bits 0 and 1 of the return code, respectively.
