@@ -40,7 +40,6 @@ import retry
 
 from oauth2client.contrib import gce
 import google.cloud.datastore as cloud_datastore
-import google.cloud.exceptions as cloud_exceptions
 
 
 # These are the quantities monitored by prometheus
@@ -180,7 +179,8 @@ def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
             temp.flush()
             # Download all the files.
             try:
-                logging.info('Synching %d files', len(filenames))
+                logging.info('Synching %d files (already synched %d/%d)',
+                             len(filenames), start, len(files))
                 command = ([nocache_binary, rsync_binary] + RSYNC_ARGS +
                            ['--from0', '--files-from', temp.name, rsync_url,
                             destination])
@@ -534,10 +534,10 @@ class SyncStatus(object):
         self._key = None
         self._entity = None
 
-    # Retry logic required until
+    # Retry required until
     # https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2694
     # is fixed.
-    @retry.retry(cloud_exceptions.ServiceUnavailable, tries=5)
+    @retry.retry(tries=5)
     def get_data(self):
         """Retrieves data from cloud datastore.
 
@@ -570,10 +570,10 @@ class SyncStatus(object):
         else:
             return xdate_to_date_or_die(value[SyncStatus.COLLECTION_KEY])
 
-    # Retry logic required until
+    # Retry required until
     # https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2694
     # is fixed.
-    @retry.retry(cloud_exceptions.ServiceUnavailable, tries=5)
+    @retry.retry(tries=5)
     def update_data(self, entry_key, entry_value):
         """Updates a datastore value.
 
