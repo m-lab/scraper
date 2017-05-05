@@ -180,7 +180,8 @@ def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
             temp.flush()
             # Download all the files.
             try:
-                logging.info('Synching %d files', len(filenames))
+                logging.info('Synching %d files (already synched %d/%d)',
+                             len(filenames), start, len(files))
                 command = ([nocache_binary, rsync_binary] + RSYNC_ARGS +
                            ['--from0', '--files-from', temp.name, rsync_url,
                             destination])
