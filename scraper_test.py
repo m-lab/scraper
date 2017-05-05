@@ -30,6 +30,8 @@ import freezegun
 import mock
 import testfixtures
 
+import google.cloud.exceptions as cloud_exceptions
+
 import run_scraper
 import scraper
 
@@ -280,7 +282,7 @@ BADBADBAD
         client = mock.Mock()
         client.key.return_value = {}
         client.get.side_effect = [
-            scraper.cloud_exceptions.ServiceUnavailable('one failure'), {}]
+            cloud_exceptions.ServiceUnavailable('one failure'), {}]
         status = scraper.SyncStatus(client, None)
         status.get_data()
 
@@ -288,10 +290,10 @@ BADBADBAD
     def test_get_data_fails_eventually(self, _log):
         client = mock.Mock()
         client.key.return_value = {}
-        client.get.side_effect = scraper.cloud_exceptions.ServiceUnavailable(
+        client.get.side_effect = cloud_exceptions.ServiceUnavailable(
             'permanent failure')
         status = scraper.SyncStatus(client, None)
-        with self.assertRaises(scraper.cloud_exceptions.ServiceUnavailable):
+        with self.assertRaises(cloud_exceptions.ServiceUnavailable):
             status.get_data()
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
@@ -354,7 +356,7 @@ BADBADBAD
         client = mock.Mock()
         client.get.return_value = None
         client.put.side_effect = [
-            scraper.cloud_exceptions.ServiceUnavailable('one failure'), None]
+            cloud_exceptions.ServiceUnavailable('one failure'), None]
         status = scraper.SyncStatus(client, None)
         status.update_data('key', 'value')
 
@@ -362,10 +364,10 @@ BADBADBAD
     def test_update_data_eventually_fails(self, _log):
         client = mock.Mock()
         client.get.return_value = None
-        client.put.side_effect = scraper.cloud_exceptions.ServiceUnavailable(
+        client.put.side_effect = cloud_exceptions.ServiceUnavailable(
             'permanent failure')
         status = scraper.SyncStatus(client, None)
-        with self.assertRaises(scraper.cloud_exceptions.ServiceUnavailable):
+        with self.assertRaises(cloud_exceptions.ServiceUnavailable):
             status.update_data('key', 'value')
 
     def test_assert_mlab_hostname(self):
