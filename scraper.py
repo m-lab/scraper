@@ -181,7 +181,8 @@ def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
             try:
                 logging.info('Synching %d files (already synched %d/%d)',
                              len(filenames), start, len(files))
-                command = ([nocache_binary, rsync_binary] + RSYNC_ARGS +
+                #command = ([nocache_binary, rsync_binary] + RSYNC_ARGS +
+                command = ([rsync_binary] + RSYNC_ARGS +
                            ['--from0', '--files-from', temp.name, rsync_url,
                             destination])
                 subprocess.check_call(command)
@@ -282,8 +283,8 @@ def create_tarfile(nocache_binary, tar_binary, tarfile_name, component_files):
                       'creation of another file of the same name',
                       os.getcwd(), tarfile_name)
         sys.exit(1)
-    command = ([nocache_binary, tar_binary, 'cfz', tarfile_name] +
-               component_files)
+    #command = ([nocache_binary, tar_binary, 'cfz', tarfile_name] + component_files)
+    command = ([tar_binary, 'cfz', tarfile_name] + component_files)
     try:
         subprocess.check_call(command)
     except subprocess.CalledProcessError as error:
@@ -378,15 +379,6 @@ def create_temporary_tarfiles(nocache_binary, tar_binary, gunzip_binary,
     max_mtime = 0
     with chdir(directory):
         for filename in sorted(all_files(day_dir)):
-            # TODO(https://github.com/m-lab/scraper/issues/7) compression
-            # Stop with this compression and decompression nonsense by deleting
-            # all code between this comment and the one that says "END TODO"
-            if filename.endswith('.gz'):
-                filename = attempt_decompression(nocache_binary, gunzip_binary,
-                                                 filename)
-            # END TODO(https://github.com/m-lab/scraper/issues/7)
-            if not os.path.isfile(filename):
-                continue
             filestat = os.stat(filename)
             filesize = filestat.st_size
             max_mtime = max(max_mtime, int(filestat.st_mtime))
