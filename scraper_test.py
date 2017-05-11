@@ -226,8 +226,15 @@ BADBADBAD
                          datetime.date(2016, 1, 26))
 
     def test_datetime_to_epoch(self):
-        the_time = datetime.datetime(1970, 1, 1, 0, 0, 24)
-        self.assertEqual(scraper.datetime_to_epoch(the_time), 24)
+        self.assertEqual(
+            scraper.datetime_to_epoch(datetime.datetime(1970, 1, 1, 0, 0, 24)),
+            24)
+        self.assertEqual(
+            scraper.datetime_to_epoch(datetime.datetime(1970, 1, 1)),
+            0)
+        self.assertEqual(
+            scraper.datetime_to_epoch(datetime.datetime(1970, 1, 2)),
+            24 * 60 * 60)
 
     def test_chdir(self):
         try:
