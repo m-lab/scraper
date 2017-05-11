@@ -151,7 +151,7 @@ def remove_older_files(date, files):
 FILES_PER_RSYNC_DOWNLOAD = 1000
 
 
-def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
+def download_files(rsync_binary, rsync_url, files, destination):
     """Downloads the files from the server.
 
     The filenames may not be safe for shell interpretation, so make sure
@@ -159,7 +159,6 @@ def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
     the download, exit.
 
     Args:
-      nocache_binary: The full path to `nocache`
       rsync_binary: The full path to `rsync`
       rsync_url: The url from which to retrieve the files
       files: an iterable of filenames to retrieve
@@ -181,7 +180,6 @@ def download_files(nocache_binary, rsync_binary, rsync_url, files, destination):
             try:
                 logging.info('Synching %d files (already synched %d/%d)',
                              len(filenames), start, len(files))
-                #command = ([nocache_binary, rsync_binary] + RSYNC_ARGS +
                 command = ([rsync_binary] + RSYNC_ARGS +
                            ['--from0', '--files-from', temp.name, rsync_url,
                             destination])
@@ -266,11 +264,10 @@ def chdir(directory):
         os.chdir(cwd)
 
 
-def create_tarfile(nocache_binary, tar_binary, tarfile_name, component_files):
+def create_tarfile(tar_binary, tarfile_name, component_files):
     """Creates a tarfile in the current directory.
 
     Args:
-      nocache_binary: the full path to the nocache binary
       tar_binary: the full path to the tar binary
       tarfile_name: the name of the tarfile to create, including extension
       component_files: a list of filenames to put in that tarfile
@@ -283,7 +280,6 @@ def create_tarfile(nocache_binary, tar_binary, tarfile_name, component_files):
                       'creation of another file of the same name',
                       os.getcwd(), tarfile_name)
         sys.exit(1)
-    #command = ([nocache_binary, tar_binary, 'cfz', tarfile_name] + component_files)
     command = ([tar_binary, 'cfz', tarfile_name] + component_files)
     try:
         subprocess.check_call(command)
@@ -311,32 +307,6 @@ def node_and_site(host):
     return (names[-4], names[-3])
 
 
-def attempt_decompression(nocache_binary, gunzip_binary, filename):
-    """Attempt to decompress a .gz file.
-
-    If the attempt fails, return the original filename. Otherwise return the new
-    filename.
-    """
-    assert filename.endswith('.gz'), 'Bad filename to decompress: ' + filename
-    basename = filename[:-3]
-    if os.path.exists(basename):
-        logging.warning(
-            'Assuming that already-existing file %s is the unzipped '
-            'version of %s', basename, filename)
-        return basename
-    command = [nocache_binary, gunzip_binary, filename]
-    try:
-        subprocess.check_call(command)
-    except subprocess.CalledProcessError as error:
-        logging.error('gunzip failed on %s (%s)', filename, error.message)
-        return filename
-    if not os.path.exists(basename):
-        logging.error('gunzip of %s failed to create %s', filename,
-                      basename)
-        return filename
-    return basename
-
-
 def all_files(directory):
     """Lists all files in all subdirectories beneath the current dir."""
     for root, _dirs, files in os.walk(directory):
@@ -344,8 +314,7 @@ def all_files(directory):
             yield os.path.join(root, filename)
 
 
-def create_temporary_tarfiles(nocache_binary, tar_binary, gunzip_binary,
-                              directory, day, host, experiment,
+def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
                               max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
 
@@ -354,7 +323,6 @@ def create_temporary_tarfiles(nocache_binary, tar_binary, gunzip_binary,
     Upon resumption, remove the tarfile that was created.
 
     Args:
-      nocache_binary: the full pathname for the nocache binary
       tar_binary: the full pathname for the tar binary
       directory: the directory at the root of the file hierarchy
       day: the date for the tarfile
@@ -387,8 +355,7 @@ def create_temporary_tarfiles(nocache_binary, tar_binary, gunzip_binary,
                 tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                              filename_suffix)
                 try:
-                    create_tarfile(nocache_binary, tar_binary, tarfile_name,
-                                   tarfile_files)
+                    create_tarfile(tar_binary, tarfile_name, tarfile_files)
                     logging.info('Created local file %s', tarfile_name)
                     yield tarfile_name, max_mtime
                 finally:
@@ -403,8 +370,7 @@ def create_temporary_tarfiles(nocache_binary, tar_binary, gunzip_binary,
             tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
                                          filename_suffix)
             try:
-                create_tarfile(nocache_binary, tar_binary, tarfile_name,
-                               tarfile_files)
+                create_tarfile(tar_binary, tarfile_name, tarfile_files)
                 logging.info('Created local file %s', tarfile_name)
                 yield tarfile_name, max_mtime
             finally:
@@ -676,8 +642,7 @@ def download(args, rsync_url, sync_status, destination):  # pragma: no cover
     last_archived_date = sync_status.get_last_archived_date()
     all_remote_files = list_rsync_files(args.rsync_binary, rsync_url)
     newer_files = remove_older_files(last_archived_date, all_remote_files)
-    download_files(args.nocache_binary, args.rsync_binary, rsync_url,
-                   newer_files, destination)
+    download_files(args.rsync_binary, rsync_url, newer_files, destination)
 
 
 def upload_if_allowed(args, sync_status, destination,
@@ -693,9 +658,8 @@ def upload_if_allowed(args, sync_status, destination,
                                        candidate_last_archived_date):
         max_mtime = None
         for tgz_filename, max_mtime in create_temporary_tarfiles(
-                args.nocache_binary, args.tar_binary, args.gunzip_binary,
-                destination, day, args.rsync_host, args.rsync_module,
-                args.max_uncompressed_size):
+                args.tar_binary, destination, day, args.rsync_host,
+                args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_host, args.rsync_module, args.bucket)
         sync_status.update_last_archived_date(day)
