@@ -722,6 +722,11 @@ def upload_if_allowed(args, sync_status, destination,
             sync_status.update_mtime(max_mtime)
         remove_datafiles(destination, day)
     if max_mtime is None:
+        # The last archived date indicates the date with which we are finished.
+        # Therefore, the high water mark should be equal to the last possible
+        # high water mark of the day, assuming there was no data that day.
         sync_status.update_mtime(
-            datetime_to_epoch(candidate_last_archived_date))
+            datetime_to_epoch(candidate_last_archived_date +
+                              datetime.timedelta(hours=23, minutes=59,
+                                                 seconds=59)))
     sync_status.update_debug_message('')
