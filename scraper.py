@@ -74,6 +74,10 @@ TARFILE_UPLOAD_TIME = prometheus_client.Histogram(
     'scraper_per_tarfile_upload_time_seconds',
     'How long it took to upload each tarfile',
     buckets=TIME_BUCKETS)
+TARFILE_CHUNK_UPLOAD_TIME = prometheus_client.Histogram(
+    'scraper_tarfile_chunk_upload_time_seconds',
+    'How long it took to upload each tarfile',
+    buckets=TIME_BUCKETS)
 # pylint: enable=no-value-for-parameter
 FILES_UPLOADED = prometheus_client.Counter(
     'scraper_files_uploaded',
@@ -237,6 +241,16 @@ def max_new_archived_date():
     """
     return (datetime.datetime.utcnow() - datetime.timedelta(
         days=1, hours=8)).date()
+
+
+def datetime_to_epoch(datetime_value):
+    """Converts a datetime value into seconds since epoch.
+
+    This should be a member function of the datetime class, but they did not see
+    fit to provide this functionality.
+    """
+    epoch = datetime.datetime(year=1970, month=1, day=1)
+    return int((datetime_value - epoch).total_seconds())
 
 
 def find_all_days_to_upload(localdir, candidate_last_archived_date):
@@ -421,7 +435,7 @@ TARFILE_UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024
 
 
 @TARFILE_UPLOAD_TIME.time()
-def upload_tarfile(service, tgz_filename, date, host, experiment,
+def upload_tarfile(service, tgz_filename, date, experiment,
                    bucket):  # pragma: no cover
     """Uploads a tarfile to Google Cloud Storage for later processing.
 
@@ -432,7 +446,6 @@ def upload_tarfile(service, tgz_filename, date, host, experiment,
       service: the service object returned from discovery
       tgz_filename: the basename of the tarfile
       date: the date for the data
-      host: the host from which the data came
       experiment: the subdirectory of the bucket for this data
       bucket: the name of the GCS bucket
 
@@ -449,9 +462,10 @@ def upload_tarfile(service, tgz_filename, date, host, experiment,
         bucket=bucket, name=name, media_body=media)
     response = None
     while response is None:
-        progress, response = request.next_chunk()
-        if progress:
-            logging.debug('Uploaded %d%%', 100.0 * progress.progress())
+        with TARFILE_CHUNK_UPLOAD_TIME.time():
+            progress, response = request.next_chunk()
+            if progress:
+                logging.debug('Uploaded %d%%', 100.0 * progress.progress())
     logging.info('Upload to %s/%s complete!', bucket, name)
 
 
@@ -686,6 +700,7 @@ def upload_if_allowed(args, sync_status, destination,
     the local copies of all successfully-uploaded data.
     """
     candidate_last_archived_date = max_new_archived_date()
+    max_mtime = None
     for day in find_all_days_to_upload(destination,
                                        candidate_last_archived_date):
         max_mtime = None
@@ -693,7 +708,7 @@ def upload_if_allowed(args, sync_status, destination,
                 args.tar_binary, destination, day, args.rsync_host,
                 args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
-                           args.rsync_host, args.rsync_module, args.bucket)
+                           args.rsync_module, args.bucket)
             FILES_UPLOADED.labels(
                 bucket=args.bucket,
                 rsync_host=args.rsync_host,
@@ -706,4 +721,7 @@ def upload_if_allowed(args, sync_status, destination,
         if max_mtime is not None:
             sync_status.update_mtime(max_mtime)
         remove_datafiles(destination, day)
+    if max_mtime is None:
+        sync_status.update_mtime(
+            datetime_to_epoch(candidate_last_archived_date))
     sync_status.update_debug_message('')
