@@ -35,30 +35,21 @@ import oauth2client
 import prometheus_client
 import scraper
 
-# Prometheus histogram buckets are web-response-sized by default, with lots of
-# sub-second buckets and very few multi-second buckets.  We need to change them
-# to rsync-download-sized, with lots of multi-second buckets up to even a
-# multi-hour bucket or two.  The precise choice of bucket values below is a
-# compromise between exponentially-sized bucket growth and a desire to make
-# sure that the bucket sizes are nice round time units.
-TIME_BUCKETS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0,
-                1800.0, 3600.0, 7200.0, float('inf'))
-
 # The monitoring variables exported by the prometheus_client
 # The prometheus_client libraries confuse the linter.
 # pylint: disable=no-value-for-parameter
 RSYNC_RUNS = prometheus_client.Histogram(
     'scraper_rsync_runtime_seconds',
     'How long each rsync download took',
-    buckets=TIME_BUCKETS)
+    buckets=scraper.TIME_BUCKETS)
 UPLOAD_RUNS = prometheus_client.Histogram(
     'scraper_gcs_upload_runtime_seconds',
     'How long each GCS upload took',
-    buckets=TIME_BUCKETS)
+    buckets=scraper.TIME_BUCKETS)
 SLEEPS = prometheus_client.Histogram(
     'scraper_sleep_time_seconds',
     'How long we slept between scraper runs (should be an exp distribution)',
-    buckets=TIME_BUCKETS)
+    buckets=scraper.TIME_BUCKETS)
 # pylint: enable=no-value-for-parameter
 SCRAPER_SUCCESS = prometheus_client.Counter(
     'scraper_success',

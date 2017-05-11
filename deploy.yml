@@ -33,17 +33,20 @@ spec:
     spec:
       containers:
         - name: {{site}}-{{node}}-{{experiment}}-{{rsync_module}}
-          image: gcr.io/mlab-sandbox/github-pboothe-scraper-spreadsheet-sync:f5e2fc7b0a7a3d28dfac82520feb1a37821cc30d
+          image: # Travis or the human doing this by hand should fill this in
           env:
             - name: RSYNC_MODULE
               value: {{rsync_module}}
             - name: RSYNC_HOST
               value: {{rsync_host}}
             - name: GCS_BUCKET
-              value: scraper-mlab-sandbox
+              value: # Travis or the human doing this by hand should fill this in
             - name: DATASTORE_NAMESPACE
-              value: scraper
+              value: # Travis or the human doing this by hand should fill this in
           resources:
             requests:
-              memory: "100Mi"
+              memory: "200Mi"
+              cpu: "30m"
+            limits:
+              memory: "200Mi"
               cpu: "30m"

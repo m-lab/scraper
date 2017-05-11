@@ -42,10 +42,42 @@ from oauth2client.contrib import gce
 import google.cloud.datastore as cloud_datastore
 
 
+# Prometheus histogram buckets are web-response-sized by default, with lots of
+# sub-second buckets and very few multi-second buckets.  We need to change them
+# to rsync-download-sized, with lots of multi-second buckets up to even a
+# multi-hour bucket or two.  The precise choice of bucket values below is a
+# compromise between exponentially-sized bucket growth and a desire to make
+# sure that the bucket sizes are nice round time units.
+TIME_BUCKETS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0,
+                1800.0, 3600.0, 7200.0, float('inf'))
+
 # These are the quantities monitored by prometheus
 BYTES_UPLOADED = prometheus_client.Counter(
     'scraper_bytes_uploaded',
     'Total bytes uploaded to GCS',
+    ['bucket', 'rsync_host', 'experiment'])
+# The prometheus_client libraries confuse the linter.
+# pylint: disable=no-value-for-parameter
+RSYNC_LIST_FILES_RUNS = prometheus_client.Histogram(
+    'scraper_rsync_list_runtime_seconds',
+    'How long each rsync list-files op took',
+    buckets=TIME_BUCKETS)
+RSYNC_FILE_CHUNK_DOWNLOADS = prometheus_client.Histogram(
+    'scraper_rsync_chunk_download_runtime_seconds',
+    'How long each rsync download of a 1000-file chunk took',
+    buckets=TIME_BUCKETS)
+TARFILE_CREATION_TIME = prometheus_client.Histogram(
+    'scraper_per_tarfile_creation_runtime_seconds',
+    'How long it took to make each tarfile',
+    buckets=TIME_BUCKETS)
+TARFILE_UPLOAD_TIME = prometheus_client.Histogram(
+    'scraper_per_tarfile_upload_time_seconds',
+    'How long it took to upload each tarfile',
+    buckets=TIME_BUCKETS)
+# pylint: enable=no-value-for-parameter
+FILES_UPLOADED = prometheus_client.Counter(
+    'scraper_files_uploaded',
+    'Total file count of the files uploaded to GCS',
     ['bucket', 'rsync_host', 'experiment'])
 
 
@@ -73,6 +105,7 @@ def assert_mlab_hostname(hostname):
 RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000', '--times']
 
 
+@RSYNC_LIST_FILES_RUNS.time()
 def list_rsync_files(rsync_binary, rsync_url):
     """Get a list of all files in the rsync module on the server.
 
@@ -170,23 +203,24 @@ def download_files(rsync_binary, rsync_url, files, destination):
         return
     # Rsync all the files passed in
     for start in range(0, len(files), FILES_PER_RSYNC_DOWNLOAD):
-        filenames = files[start:start + FILES_PER_RSYNC_DOWNLOAD]
-        with tempfile.NamedTemporaryFile() as temp:
-            # Write the list of files to a tempfile, so as not to have to worry
-            # about too-long command lines full of filenames.
-            temp.write('\0'.join(filenames))
-            temp.flush()
-            # Download all the files.
-            try:
-                logging.info('Synching %d files (already synched %d/%d)',
-                             len(filenames), start, len(files))
-                command = ([rsync_binary] + RSYNC_ARGS +
-                           ['--from0', '--files-from', temp.name, rsync_url,
-                            destination])
-                subprocess.check_call(command)
-            except subprocess.CalledProcessError as error:
-                logging.error('rsync download failed: %s', str(error))
-                sys.exit(1)
+        with RSYNC_FILE_CHUNK_DOWNLOADS.time():
+            filenames = files[start:start + FILES_PER_RSYNC_DOWNLOAD]
+            with tempfile.NamedTemporaryFile() as temp:
+                # Write the list of files to a tempfile, so as not to have to
+                # worry about too-long command lines full of filenames.
+                temp.write('\0'.join(filenames))
+                temp.flush()
+                # Download all the files.
+                try:
+                    logging.info('Synching %d files (already synched %d/%d)',
+                                 len(filenames), start, len(files))
+                    command = ([rsync_binary] + RSYNC_ARGS +
+                               ['--from0', '--files-from', temp.name, rsync_url,
+                                destination])
+                    subprocess.check_call(command)
+                except subprocess.CalledProcessError as error:
+                    logging.error('rsync download failed: %s', str(error))
+                    sys.exit(1)
     logging.info('sync completed successfully from %s', rsync_url)
 
 
@@ -264,6 +298,7 @@ def chdir(directory):
         os.chdir(cwd)
 
 
+@TARFILE_CREATION_TIME.time()
 def create_tarfile(tar_binary, tarfile_name, component_files):
     """Creates a tarfile in the current directory.
 
@@ -331,8 +366,8 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
       max_uncompressed_size: the max size of an individual tarfile
 
     Yields:
-      A tuple of the name of the tarfile created and the most recent mtime of
-      any tarfile's component files
+      A tuple of the name of the tarfile created, the most recent mtime of
+      any tarfile's component files, and the number of files in the tarfile
     """
     node, site = node_and_site(host)
     # Ensure that the filenames we generate match the existing files that have
@@ -357,7 +392,7 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
                 try:
                     create_tarfile(tar_binary, tarfile_name, tarfile_files)
                     logging.info('Created local file %s', tarfile_name)
-                    yield tarfile_name, max_mtime
+                    yield tarfile_name, max_mtime, len(tarfile_files)
                 finally:
                     os.remove(tarfile_name)
                     logging.info('Removed local file %s', tarfile_name)
@@ -372,7 +407,7 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
             try:
                 create_tarfile(tar_binary, tarfile_name, tarfile_files)
                 logging.info('Created local file %s', tarfile_name)
-                yield tarfile_name, max_mtime
+                yield tarfile_name, max_mtime, len(tarfile_files)
             finally:
                 os.remove(tarfile_name)
                 logging.info('Removed local file %s', tarfile_name)
@@ -385,6 +420,7 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
 TARFILE_UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024
 
 
+@TARFILE_UPLOAD_TIME.time()
 def upload_tarfile(service, tgz_filename, date, host, experiment,
                    bucket):  # pragma: no cover
     """Uploads a tarfile to Google Cloud Storage for later processing.
@@ -417,10 +453,6 @@ def upload_tarfile(service, tgz_filename, date, host, experiment,
         if progress:
             logging.debug('Uploaded %d%%', 100.0 * progress.progress())
     logging.info('Upload to %s/%s complete!', bucket, name)
-    BYTES_UPLOADED.labels(
-        bucket=bucket,
-        rsync_host=host,
-        experiment=experiment).inc(os.stat(tgz_filename).st_size)
 
 
 def remove_datafiles(directory, day):
@@ -657,11 +689,19 @@ def upload_if_allowed(args, sync_status, destination,
     for day in find_all_days_to_upload(destination,
                                        candidate_last_archived_date):
         max_mtime = None
-        for tgz_filename, max_mtime in create_temporary_tarfiles(
+        for tgz_filename, max_mtime, num_files in create_temporary_tarfiles(
                 args.tar_binary, destination, day, args.rsync_host,
                 args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_host, args.rsync_module, args.bucket)
+            FILES_UPLOADED.labels(
+                bucket=args.bucket,
+                rsync_host=args.rsync_host,
+                experiment=args.rsync_module).inc(num_files)
+            BYTES_UPLOADED.labels(
+                bucket=args.bucket,
+                rsync_host=args.rsync_host,
+                experiment=args.rsync_module).inc(os.stat(tgz_filename).st_size)
         sync_status.update_last_archived_date(day)
         if max_mtime is not None:
             sync_status.update_mtime(max_mtime)
