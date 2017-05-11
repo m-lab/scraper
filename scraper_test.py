@@ -541,7 +541,8 @@ class TestScraperInTempDir(unittest.TestCase):
         gen = scraper.create_temporary_tarfiles(
             '/bin/tar', self.temp_d, datetime.date(2016, 1, 28),
             'mlab9.dne04.measurement-lab.org', 'exper', 100000)
-        fname, _ = gen.next()
+        fname, _, count = gen.next()
+        self.assertEqual(count, 3)
         self.assertTrue(os.path.isfile(fname))
         shutil.rmtree('2016')
         self.assertFalse(os.path.exists('2016/01/28/test1.txt'))
