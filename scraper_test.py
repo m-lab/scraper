@@ -497,17 +497,6 @@ class TestScraperInTempDir(unittest.TestCase):
         self.assertEqual(file('2016/01/28/test2.txt').read(), 'goodbye')
 
     @testfixtures.log_capture()
-    def test_create_temporary_tarfiles_skips_baregz(self):
-        os.makedirs('2016/01/28')
-        file('2016/01/28/.gz', 'w').write('hello')
-        gen = scraper.create_temporary_tarfiles(
-            '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', '.',
-            datetime.date(2016, 1, 28),
-            'ndt.iupui.mlab1.xxx02.measurement-lab.org', 'ndt', 10000)
-        with self.assertRaises(StopIteration):
-            gen.next()
-
-    @testfixtures.log_capture()
     def test_create_tarfile_fails_on_existing_tarfile(self, log):
         os.makedirs('2016/01/28')
         file('2016/01/28/test1.txt', 'w').write('hello')
@@ -569,7 +558,7 @@ class TestScraperInTempDir(unittest.TestCase):
         ])
         self.assertTrue(os.path.exists('2016/01/28/test1.txt'))
         self.assertTrue(os.path.exists('2016/01/28/test2.txt'))
-        self.assertTrue(os.path.exists('2016/01/28/test3.txt'))
+        self.assertTrue(os.path.exists('2016/01/28/test3.txt.gz'))
         with self.assertRaises(StopIteration):
             gen.next()
 
