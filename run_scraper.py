@@ -151,13 +151,6 @@ def parse_cmdline(args):
         required=False,
         help='The location of the tar binary (default is /bin/tar)')
     parser.add_argument(
-        '--gunzip_binary',
-        metavar='GUNZIP',
-        type=str,
-        default='/bin/gunzip',
-        required=False,
-        help='The location of the gunzip binary (default is /bin/gunzip)')
-    parser.add_argument(
         '--max_uncompressed_size',
         metavar='SIZE',
         type=int,
@@ -171,12 +164,6 @@ def parse_cmdline(args):
         type=str,
         default='mlab-storage-scraper-test',
         help='The Google Cloud Storage bucket to upload to')
-    parser.add_argument(
-        '--nocache_binary',
-        metavar='NOCACHE',
-        type=str,
-        default='/usr/bin/nocache',
-        help='The location of the nocache binary')
     return parser.parse_args(args)
 
 

@@ -165,8 +165,7 @@ BADBADBAD
     @testfixtures.log_capture()
     def test_download_files_fails_and_dies(self, log):
         with self.assertRaises(SystemExit):
-            scraper.download_files('/usr/bin/nocache', '/bin/false',
-                                   'localhost/',
+            scraper.download_files('/bin/false', 'localhost/',
                                    ['2016/10/26/DNE1', '2016/10/26/DNE2'],
                                    '/tmp')
         self.assertIn('ERROR', [x.levelname for x in log.records])
@@ -174,8 +173,7 @@ BADBADBAD
     @testfixtures.log_capture()
     def test_download_files_with_empty_does_nothing(self, _log):
         # If the next line doesn't raise SystemExit then the test passes
-        scraper.download_files('/usr/bin/nocache', '/bin/false', 'localhost/',
-                               [], '/tmp')
+        scraper.download_files('/bin/false', 'localhost/', [], '/tmp')
 
     @mock.patch.object(subprocess, 'check_call')
     def test_download_files(self, patched_check_call):
@@ -191,8 +189,8 @@ BADBADBAD
             self.assertEqual(files_to_download, files_downloaded)
 
         patched_check_call.side_effect = verify_contents
-        scraper.download_files('/usr/bin/nocache', '/bin/true', 'localhost/',
-                               files_to_download, '/tmp')
+        scraper.download_files('/bin/true', 'localhost/', files_to_download,
+                               '/tmp')
         patched_check_call.assert_called_once()
 
     @mock.patch.object(subprocess, 'check_call')
@@ -212,8 +210,8 @@ BADBADBAD
             files_downloaded.extend(files)
 
         patched_check_call.side_effect = verify_contents
-        scraper.download_files('/usr/bin/nocache', '/bin/true', 'localhost/',
-                               files_to_download, '/tmp')
+        scraper.download_files('/bin/true', 'localhost/', files_to_download,
+                               '/tmp')
         self.assertEqual(set(files_to_download), set(files_downloaded))
         self.assertEqual(patched_check_call.call_count, 101)
 
@@ -485,9 +483,8 @@ class TestScraperInTempDir(unittest.TestCase):
         os.makedirs('2016/01/28')
         file('2016/01/28/test1.txt', 'w').write('hello')
         file('2016/01/28/test2.txt', 'w').write('goodbye')
-        scraper.create_tarfile(
-            '/usr/bin/nocache', '/bin/tar', 'test.tgz',
-            ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+        scraper.create_tarfile('/bin/tar', 'test.tgz', ['2016/01/28/test1.txt',
+                                                        '2016/01/28/test2.txt'])
         shutil.rmtree('2016')
         self.assertFalse(os.path.exists('2016'))
         self.assertTrue(os.path.exists('test.tgz'))
@@ -497,17 +494,6 @@ class TestScraperInTempDir(unittest.TestCase):
         self.assertEqual(file('2016/01/28/test2.txt').read(), 'goodbye')
 
     @testfixtures.log_capture()
-    def test_create_temporary_tarfiles_skips_baregz(self):
-        os.makedirs('2016/01/28')
-        file('2016/01/28/.gz', 'w').write('hello')
-        gen = scraper.create_temporary_tarfiles(
-            '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', '.',
-            datetime.date(2016, 1, 28),
-            'ndt.iupui.mlab1.xxx02.measurement-lab.org', 'ndt', 10000)
-        with self.assertRaises(StopIteration):
-            gen.next()
-
-    @testfixtures.log_capture()
     def test_create_tarfile_fails_on_existing_tarfile(self, log):
         os.makedirs('2016/01/28')
         file('2016/01/28/test1.txt', 'w').write('hello')
@@ -515,9 +501,9 @@ class TestScraperInTempDir(unittest.TestCase):
         file('test.tgz', 'w').write('in the way')
         self.assertEqual(file('test.tgz').read(), 'in the way')
         with self.assertRaises(SystemExit):
-            scraper.create_tarfile(
-                '/usr/bin/nocache', '/bin/tar', 'test.tgz',
-                ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+            scraper.create_tarfile('/bin/tar', 'test.tgz',
+                                   ['2016/01/28/test1.txt',
+                                    '2016/01/28/test2.txt'])
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
@@ -526,9 +512,9 @@ class TestScraperInTempDir(unittest.TestCase):
         file('2016/01/28/test1.txt', 'w').write('hello')
         file('2016/01/28/test2.txt', 'w').write('goodbye')
         with self.assertRaises(SystemExit):
-            scraper.create_tarfile(
-                '/usr/bin/nocache', '/bin/false', 'test.tgz',
-                ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+            scraper.create_tarfile('/bin/false', 'test.tgz',
+                                   ['2016/01/28/test1.txt',
+                                    '2016/01/28/test2.txt'])
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
@@ -538,9 +524,9 @@ class TestScraperInTempDir(unittest.TestCase):
         file('2016/01/28/test2.txt', 'w').write('goodbye')
         with self.assertRaises(SystemExit):
             # Executes successfully, but fails to create the tarfile.
-            scraper.create_tarfile(
-                '/usr/bin/nocache', '/bin/true', 'test.tgz',
-                ['2016/01/28/test1.txt', '2016/01/28/test2.txt'])
+            scraper.create_tarfile('/bin/true', 'test.tgz',
+                                   ['2016/01/28/test1.txt',
+                                    '2016/01/28/test2.txt'])
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
     def test_create_tarfiles(self):
@@ -553,8 +539,7 @@ class TestScraperInTempDir(unittest.TestCase):
             self.assertFalse(os.path.exists('test3.txt'))
             self.assertTrue(os.path.exists('test3.txt.gz'))
         gen = scraper.create_temporary_tarfiles(
-            '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', self.temp_d,
-            datetime.date(2016, 1, 28),
+            '/bin/tar', self.temp_d, datetime.date(2016, 1, 28),
             'mlab9.dne04.measurement-lab.org', 'exper', 100000)
         fname, _ = gen.next()
         self.assertTrue(os.path.isfile(fname))
@@ -569,7 +554,7 @@ class TestScraperInTempDir(unittest.TestCase):
         ])
         self.assertTrue(os.path.exists('2016/01/28/test1.txt'))
         self.assertTrue(os.path.exists('2016/01/28/test2.txt'))
-        self.assertTrue(os.path.exists('2016/01/28/test3.txt'))
+        self.assertTrue(os.path.exists('2016/01/28/test3.txt.gz'))
         with self.assertRaises(StopIteration):
             gen.next()
 
@@ -580,8 +565,7 @@ class TestScraperInTempDir(unittest.TestCase):
         # By setting the max filesize as 4 bytes, we will end up creating a
         # separate tarfile for each test file.
         gen = scraper.create_temporary_tarfiles(
-            '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', self.temp_d,
-            datetime.date(2016, 1, 28),
+            '/bin/tar', self.temp_d, datetime.date(2016, 1, 28),
             'mlab9.dne04.measurement-lab.org', 'exper', 4)
         gen.next()
         table1 = subprocess.check_output([
@@ -607,8 +591,7 @@ class TestScraperInTempDir(unittest.TestCase):
         # By setting the max filesize as 4 bytes, we will end up creating a
         # separate tarfile for each test file.
         gen = scraper.create_temporary_tarfiles(
-            '/usr/bin/nocache', '/bin/tar', '/bin/gunzip', self.temp_d,
-            datetime.date(2016, 1, 28),
+            '/bin/tar', self.temp_d, datetime.date(2016, 1, 28),
             'mlab9.dne04.measurement-lab.org', 'exper', 4)
         gen.next()
         table1 = subprocess.check_output([
@@ -641,57 +624,6 @@ class TestScraperInTempDir(unittest.TestCase):
         scraper.remove_datafiles(self.temp_d, datetime.date(2009, 2, 27))
         self.assertEqual(
             ['data2.txt'], os.listdir(os.path.join(self.temp_d, '2009/02/28')))
-
-    def test_attempt_decompression(self):
-        file('test', 'w').write('testdata')
-        subprocess.check_call(['/bin/gzip', 'test'])
-        self.assertTrue(os.path.exists('test.gz'))
-        self.assertFalse(os.path.exists('test'))
-        self.assertEqual(
-            'test',
-            scraper.attempt_decompression('/usr/bin/nocache',
-                                          '/bin/gunzip', 'test.gz'))
-        self.assertFalse(os.path.exists('test.gz'))
-        self.assertTrue(os.path.exists('test'))
-
-    @testfixtures.log_capture()
-    def test_attempt_decompression_gunzip_failure(self, log):
-        file('test', 'w').write('testdata')
-        subprocess.check_call(['/bin/gzip', 'test'])
-        self.assertTrue(os.path.exists('test.gz'))
-        self.assertFalse(os.path.exists('test'))
-        self.assertEqual(
-            'test.gz',
-            scraper.attempt_decompression('/usr/bin/nocache',
-                                          '/bin/false', 'test.gz'))
-        self.assertIn('ERROR', [x.levelname for x in log.records])
-
-    @testfixtures.log_capture()
-    def test_attempt_decompression_no_clobber(self, log):
-        file('test', 'w').write('testdata')
-        subprocess.check_call(['/bin/gzip', 'test'])
-        file('test', 'w').write('testdata')
-        self.assertTrue(os.path.exists('test.gz'))
-        self.assertTrue(os.path.exists('test'))
-        self.assertEqual(
-            'test',
-            scraper.attempt_decompression('/usr/bin/nocache',
-                                          '/bin/gunzip', 'test.gz'))
-        self.assertTrue(os.path.exists('test.gz'))
-        self.assertTrue(os.path.exists('test'))
-        self.assertIn('WARNING', [x.levelname for x in log.records])
-
-    @testfixtures.log_capture()
-    def test_attempt_decompression_disappearing_file(self, log):
-        file('test', 'w').write('testdata')
-        subprocess.check_call(['/bin/gzip', 'test'])
-        self.assertTrue(os.path.exists('test.gz'))
-        self.assertFalse(os.path.exists('test'))
-        self.assertEqual(
-            'test.gz',
-            scraper.attempt_decompression('/usr/bin/nocache',
-                                          '/bin/true', 'test.gz'))
-        self.assertIn('ERROR', [x.levelname for x in log.records])
 
 
 if __name__ == '__main__':  # pragma: no cover
