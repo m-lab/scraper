@@ -249,7 +249,14 @@ def datetime_to_epoch(datetime_value):
     This should be a member function of the datetime class, but they did not see
     fit to provide this functionality.
     """
+    # Must be a date or datetime
+    assert isinstance(datetime_value, datetime.date)
     epoch = datetime.datetime(year=1970, month=1, day=1)
+    # Turn all dates into datetimes
+    if not isinstance(datetime_value, datetime.datetime):
+        datetime_value = datetime.datetime(datetime_value.year,
+                                           datetime_value.month,
+                                           datetime_value.day)
     return int((datetime_value - epoch).total_seconds())
 
 
