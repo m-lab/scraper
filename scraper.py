@@ -249,14 +249,7 @@ def datetime_to_epoch(datetime_value):
     This should be a member function of the datetime class, but they did not see
     fit to provide this functionality.
     """
-    # Must be a date or datetime
-    assert isinstance(datetime_value, datetime.date)
     epoch = datetime.datetime(year=1970, month=1, day=1)
-    # Turn all dates into datetimes
-    if not isinstance(datetime_value, datetime.datetime):
-        datetime_value = datetime.datetime(datetime_value.year,
-                                           datetime_value.month,
-                                           datetime_value.day)
     return int((datetime_value - epoch).total_seconds())
 
 
@@ -727,8 +720,11 @@ def upload_if_allowed(args, sync_status, destination,
         # The last archived date indicates the date with which we are finished.
         # Therefore, the high water mark should be equal to the last possible
         # high water mark of the day, assuming there was no data that day.
+        datetime_value = datetime.datetime(candidate_last_archived_date.year,
+                                           candidate_last_archived_date.month,
+                                           candidate_last_archived_date.day)
         sync_status.update_mtime(
-            datetime_to_epoch(candidate_last_archived_date +
+            datetime_to_epoch(datetime_value +
                               datetime.timedelta(hours=23, minutes=59,
                                                  seconds=59)))
     sync_status.update_debug_message('')

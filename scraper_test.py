@@ -235,9 +235,6 @@ BADBADBAD
         self.assertEqual(
             scraper.datetime_to_epoch(datetime.datetime(1970, 1, 2)),
             24 * 60 * 60)
-        self.assertEqual(
-            scraper.datetime_to_epoch(datetime.date(1970, 1, 1)),
-            0)
 
     def test_chdir(self):
         try:
