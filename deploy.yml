@@ -14,11 +14,10 @@
 kind: Deployment
 apiVersion: extensions/v1beta1
 metadata:
-  name: {{site}}-{{node}}-{{experiment}}-{{rsync_module}}
+  name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
   namespace: scraper
   labels:
-    app: {{site}}-{{node}}-{{experiment}}-{{rsync_module}}
-    version: test
+    app: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
 spec:
   replicas: 1
   template:
@@ -26,23 +25,28 @@ spec:
       annotations:
         prometheus.io/scrape: 'true'
         prometheus.io/port: '9090'
-      name: {{site}}-{{node}}-{{experiment}}-{{rsync_module}}
+      name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
       labels:
-        app: {{site}}-{{node}}-{{experiment}}-{{rsync_module}}
-        version: test
+        app: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
+        service: scraper
+        experiment: {{experiment}}
+        machine: {{machine}}
+        rsync_module: {{rsync_module}}
     spec:
       containers:
-        - name: {{site}}-{{node}}-{{experiment}}-{{rsync_module}}
-          image: # Travis or the human doing this by hand should fill this in
+        - name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
+          image: # Travis or the human operator should fill this in
           env:
             - name: RSYNC_MODULE
               value: {{rsync_module}}
             - name: RSYNC_HOST
               value: {{rsync_host}}
             - name: GCS_BUCKET
-              value: # Travis or the human doing this by hand should fill this in
+              value: # Travis or the human operator should fill this in
             - name: DATASTORE_NAMESPACE
-              value: # Travis or the human doing this by hand should fill this in
+              value: # Travis or the human operator should fill this in
+            - name: MAX_UNCOMPRESSED_SIZE
+              value: 50000000
           resources:
             requests:
               memory: "200Mi"
