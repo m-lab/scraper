@@ -55,7 +55,11 @@ TIME_BUCKETS = (1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0,
 BYTES_UPLOADED = prometheus_client.Counter(
     'scraper_bytes_uploaded',
     'Total bytes uploaded to GCS',
-    ['bucket', 'rsync_host', 'experiment'])
+    ['bucket'])
+FILES_UPLOADED = prometheus_client.Counter(
+    'scraper_files_uploaded',
+    'Total file count of the files uploaded to GCS',
+    ['bucket'])
 # The prometheus_client libraries confuse the linter.
 # pylint: disable=no-value-for-parameter
 RSYNC_LIST_FILES_RUNS = prometheus_client.Histogram(
@@ -79,10 +83,6 @@ TARFILE_CHUNK_UPLOAD_TIME = prometheus_client.Histogram(
     'How long it took to upload each tarfile',
     buckets=TIME_BUCKETS)
 # pylint: enable=no-value-for-parameter
-FILES_UPLOADED = prometheus_client.Counter(
-    'scraper_files_uploaded',
-    'Total file count of the files uploaded to GCS',
-    ['bucket', 'rsync_host', 'experiment'])
 
 
 def assert_mlab_hostname(hostname):
@@ -709,14 +709,9 @@ def upload_if_allowed(args, sync_status, destination,
                 args.rsync_module, args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_module, args.bucket)
-            FILES_UPLOADED.labels(
-                bucket=args.bucket,
-                rsync_host=args.rsync_host,
-                experiment=args.rsync_module).inc(num_files)
-            BYTES_UPLOADED.labels(
-                bucket=args.bucket,
-                rsync_host=args.rsync_host,
-                experiment=args.rsync_module).inc(os.stat(tgz_filename).st_size)
+            FILES_UPLOADED.labels(bucket=args.bucket).inc(num_files)
+            BYTES_UPLOADED.labels(bucket=args.bucket).inc(
+                os.stat(tgz_filename).st_size)
         sync_status.update_last_archived_date(day)
         if max_mtime is not None:
             sync_status.update_mtime(max_mtime)
@@ -725,8 +720,11 @@ def upload_if_allowed(args, sync_status, destination,
         # The last archived date indicates the date with which we are finished.
         # Therefore, the high water mark should be equal to the last possible
         # high water mark of the day, assuming there was no data that day.
+        datetime_value = datetime.datetime(candidate_last_archived_date.year,
+                                           candidate_last_archived_date.month,
+                                           candidate_last_archived_date.day)
         sync_status.update_mtime(
-            datetime_to_epoch(candidate_last_archived_date +
+            datetime_to_epoch(datetime_value +
                               datetime.timedelta(hours=23, minutes=59,
                                                  seconds=59)))
     sync_status.update_debug_message('')
