@@ -363,6 +363,50 @@ def all_files(directory):
             yield os.path.join(root, filename)
 
 
+def timestamp_from_filename(filename):
+    """Turns a filename into a timestamp or None.
+
+    Filenames are strings like:
+      2017/05/10/20170510T15:05:01.520348000Z_12.30.237.162.c2s_ndttrace
+
+    and the associated timestamp for that filename is:
+      datetime.datetime(2017, 5, 10, 15, 5, 1.520348000)
+    """
+    basename = os.path.basename(filename)
+    timestamp_regex = re.compile(
+        r'^(\d{4})(\d\d)(\d\d)T(\d\d):(\d\d):(\d\d)\.(\d{6})')
+    #         1      2    3      4      5      6        7
+    #       year   month day   hour  minutes seconds microseconds
+    match = timestamp_regex.match(basename)
+    if match is None:
+        return None
+    else:
+        return datetime.datetime(int(match.group(1), 10),
+                                 int(match.group(2), 10),
+                                 int(match.group(3), 10),
+                                 int(match.group(4), 10),
+                                 int(match.group(5), 10),
+                                 int(match.group(6), 10),
+                                 int(match.group(7), 10))
+
+
+def create_tarfilename_template(day, host, experiment):
+    """Create a template tarfile name from the passed-in values.
+
+    Tarfile names look like:
+      '20150706T000000Z-mlab1-acc01-ndt-0000.tgz'
+
+    Where the final 0000 is a counter for the tarfiles for that site for that
+    day, which means that for that file this function would return the template:
+      '20150706T000000Z-mlab1-acc01-ndt-%04d.tgz'
+    """
+    node, site = node_and_site(host)
+    filename_prefix = '%d%02d%02dT000000Z-%s-%s-%s-' % (
+        day.year, day.month, day.day, node, site, experiment)
+    filename_suffix = '.tgz'
+    return filename_prefix + '%04d' + filename_suffix
+
+
 def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
                               max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
@@ -383,26 +427,24 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
       A tuple of the name of the tarfile created, the most recent mtime of
       any tarfile's component files, and the number of files in the tarfile
     """
-    node, site = node_and_site(host)
-    # Ensure that the filenames we generate match the existing files that have
-    # names like '20150706T000000Z-mlab1-acc01-ndt-0000.tgz'.
-    filename_prefix = '%d%02d%02dT000000Z-%s-%s-%s-' % (
-        day.year, day.month, day.day, node, site, experiment)
-    filename_suffix = '.tgz'
+    tarfile_template = create_tarfilename_template(day, host, experiment)
     day_dir = '%d/%02d/%02d' % (day.year, day.month, day.day)
     tarfile_size = 0
     tarfile_files = []
     tarfile_index = 0
     max_mtime = 0
+    prev_timestamp = None
     with chdir(directory):
         for filename in sorted(all_files(day_dir)):
+            file_timestamp = timestamp_from_filename(filename)
             filestat = os.stat(filename)
             filesize = filestat.st_size
             max_mtime = max(max_mtime, int(filestat.st_mtime))
             if (tarfile_files and
-                    tarfile_size + filesize > max_uncompressed_size):
-                tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
-                                             filename_suffix)
+                    tarfile_size + filesize > max_uncompressed_size and
+                    (file_timestamp is None or
+                     file_timestamp != prev_timestamp)):
+                tarfile_name = tarfile_template % tarfile_index
                 try:
                     create_tarfile(tar_binary, tarfile_name, tarfile_files)
                     logging.info('Created local file %s', tarfile_name)
@@ -415,9 +457,9 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
                 tarfile_index += 1
             tarfile_files.append(filename)
             tarfile_size += filesize
+            prev_timestamp = file_timestamp
         if tarfile_files:
-            tarfile_name = '%s%04d%s' % (filename_prefix, tarfile_index,
-                                         filename_suffix)
+            tarfile_name = tarfile_template % tarfile_index
             try:
                 create_tarfile(tar_binary, tarfile_name, tarfile_files)
                 logging.info('Created local file %s', tarfile_name)

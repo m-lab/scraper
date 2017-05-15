@@ -448,6 +448,26 @@ BADBADBAD
         # import" linter message, we should verify something about run_scraper.
         self.assertIsNotNone(run_scraper.__doc__)
 
+    def test_timestamp_from_filename(self):
+        self.assertEqual(
+            scraper.timestamp_from_filename(
+                '2017/05/10/20170510T15:05:01.520348000Z_'
+                '12.30.237.162.c2s_ndttrace'),
+            datetime.datetime(2017, 5, 10, 15, 5, 1, 520348))
+        self.assertEqual(
+            scraper.timestamp_from_filename(
+                '2017/05/10/2017BAD0510T15:05:01.520348000Z_'
+                '12.30.237.162.c2s_ndttrace'),
+            None)
+
+    def test_create_tarfile_template(self):
+        self.assertEqual(
+            scraper.create_tarfilename_template(
+                datetime.date(2015, 7, 6),
+                'ndt.iupui.mlab1.acc01.measurement-lab.org',
+                'ndt'),
+            '20150706T000000Z-mlab1-acc01-ndt-%04d.tgz')
+
 
 class TestScraperInTempDir(unittest.TestCase):
 
