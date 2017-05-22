@@ -25,6 +25,5 @@ deploy:
 before_install:
 - if [[ -n "$encrypted_2d1b9fd64fca_iv" ]]; then
   deploy/travis/decrypt.sh "$encrypted_2d1b9fd64fca_iv" "$encrypted_2d1b9fd64fca_key"
-  deploy/keys/credentials.tar.gz.enc /tmp/credentials.tar.gz /tmp;
-  ls /tmp;
+  deploy/keys/credentials.tar.gz.enc /tmp/credentials.tar /tmp;
   fi
