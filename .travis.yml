@@ -24,6 +24,6 @@ deploy:
     branch: staging
 before_install:
 - if [[ -n "$encrypted_2d1b9fd64fca_iv" ]]; then
-  travis/decrypt.sh "$encrypted_2d1b9fd64fca_iv" "$encrypted_2d1b9fd64fca_key"
+  deploy/travis/decrypt.sh "$encrypted_2d1b9fd64fca_iv" "$encrypted_2d1b9fd64fca_key"
   deploy/credentials.tar.gz.enc /tmp/credentials.tar.gz /tmp;
   fi
