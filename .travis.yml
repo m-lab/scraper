@@ -1,13 +1,27 @@
 language: python
+services:
+- docker
 cache:
   pip: true
-python: "2.7"
+  directories:
+  - $HOME/google-cloud-sdk/
+python: '2.7'
 dist: trusty
+sudo: required
 install:
-  - pip install -r requirements.txt
-  - pip install -r test-requirements.txt
-  - pip install coveralls
-script:
-  coverage run --source='.' -m unittest discover --pattern='*_test.py'
-after_success:
-  coveralls
+- pip install -r requirements.txt
+- pip install -r test-requirements.txt
+- pip install coveralls
+- $TRAVIS_BUILD_DIR/deploy/travis/install_gcloud.sh
+- yes | ${HOME}/google-cloud-sdk/bin/gcloud components install kubectl
+script: coverage run --source='.' -m unittest discover --pattern='*_test.py'
+after_success: coveralls
+deploy:
+- provider: script
+  script: ./deploy/deploy.sh staging
+  on:
+    repo: m-lab/scraper
+    branch: staging
+before_install:
+- openssl aes-256-cbc -K $encrypted_2d1b9fd64fca_key -iv $encrypted_2d1b9fd64fca_iv
+  -in credentials.tar.gz.enc -out credentials.tar.gz -d
