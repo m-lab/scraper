@@ -36,12 +36,13 @@ gcloud container \
   --num-nodes "150" \
   --network "default" \
   --enable-cloud-logging \
+  --node-labels=scraper-node=true \
   --no-enable-cloud-monitoring
 
 gcloud --project=mlab-sandbox container node-pools create prometheus-pool \
   --cluster=scraper-cluster
-  --num-nodes=1
-  --machine-type=n1-standard-4
+  --num-nodes=2
+  --machine-type=n1-standard-8
 ```
 
 The cluster, once it is created (and this step need only be done once per
