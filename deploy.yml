@@ -1,15 +1,16 @@
 # This file is a template, to be fleshed out by running:
 #    plsync/mlabconfig.py --format=scraper_kubernetes \
 #        --template_input=deploy.yml \
-#        --template_output=deployment/{{site}}-{{node}}-{{experiment}}-{{rsync_module}}.yml
+#        --template_output=deployment/deploy-{{site}}-{{node}}-{{experiment}}-{{rsync_module}}.yml
 #
 # The plsync directory and its contents may be found in:
 #    https://github.com/m-lab/operator
+#
 # The template, once filled out, specifies the kubernetes deployment for
 # scraper.  The deployment may be deployed with:
-#    kubectl create -f scraper_deploy.yml
+#    kubectl apply -f deployment/
 # If the deployment fails with the error "namespace does not exist", then run
-#    kubectl create -f namespace.yml
+#    kubectl apply -f namespace.yml
 # to create the namespace, and then try the deployment again.
 kind: Deployment
 apiVersion: extensions/v1beta1
@@ -18,6 +19,7 @@ metadata:
   namespace: scraper
   labels:
     app: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
+    version: test
 spec:
   replicas: 1
   template:
@@ -25,28 +27,31 @@ spec:
       annotations:
         prometheus.io/scrape: 'true'
         prometheus.io/port: '9090'
+        prometheus.io/port2: '9100'
       name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
       labels:
         app: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
-        service: scraper
+        version: test
         experiment: {{experiment}}
         machine: {{machine}}
         rsync_module: {{rsync_module}}
     spec:
+      volumes:
+      - name: volume-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
+        persistentVolumeClaim:
+          claimName: claim-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
       containers:
         - name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
-          image: # Travis or the human operator should fill this in
+          image: # Travis or the human doing this by hand should fill this in
           env:
             - name: RSYNC_MODULE
               value: {{rsync_module}}
             - name: RSYNC_HOST
               value: {{rsync_host}}
             - name: GCS_BUCKET
-              value: # Travis or the human operator should fill this in
+              value: # Travis or the human doing this by hand should fill this in
             - name: DATASTORE_NAMESPACE
-              value: # Travis or the human operator should fill this in
-            - name: MAX_UNCOMPRESSED_SIZE
-              value: 50000000
+              value: # Travis or the human doing this by hand should fill this in
           resources:
             requests:
               memory: "200Mi"
@@ -54,3 +59,23 @@ spec:
             limits:
               memory: "200Mi"
               cpu: "30m"
+          volumeMounts:
+          - mountPath: /scraper_data
+            name: volume-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
+        - image: prom/node-exporter:v0.13.0
+          name: fs-exporter
+          # Note: only enable the filesystem collector, and ignore system paths.
+          args: [ "--collectors.enabled=filesystem",
+                  "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)"]
+          ports:
+            - containerPort: 9100
+          resources:
+            requests:
+              memory: "10Mi"
+              cpu: "50m"
+            limits:
+              memory: "10Mi"
+              cpu: "50m"
+          volumeMounts:
+          - mountPath: /scraper_data
+            name: volume-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
