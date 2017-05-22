@@ -40,8 +40,9 @@ gcloud container \
   --no-enable-cloud-monitoring
 
 gcloud --project=mlab-sandbox container node-pools create prometheus-pool \
-  --cluster=scraper-cluster
-  --num-nodes=2
+  --cluster=scraper-cluster \
+  --num-nodes=2 \
+  --node-labels=prometheus-node=true \
   --machine-type=n1-standard-8
 ```
 
