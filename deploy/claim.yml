@@ -27,3 +27,4 @@ spec:
   resources:
     requests:
       storage: {{GIGABYTES}}Gi
+
