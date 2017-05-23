@@ -12,7 +12,7 @@ install:
 - pip install -r requirements.txt
 - pip install -r test-requirements.txt
 - pip install coveralls
-- $TRAVIS_BUILD_DIR/deploy/travis/install_gcloud.sh
+- $TRAVIS_BUILD_DIR/travis/install_gcloud.sh
 - yes | ${HOME}/google-cloud-sdk/bin/gcloud components install kubectl
 script: coverage run --source='.' -m unittest discover --pattern='*_test.py'
 after_success: coveralls
