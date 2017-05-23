@@ -23,7 +23,5 @@ deploy:
     repo: m-lab/scraper
     branch: staging
 before_install:
-- if [[ -n "$encrypted_2d1b9fd64fca_iv" ]]; then
-  deploy/travis/decrypt.sh "$encrypted_2d1b9fd64fca_iv" "$encrypted_2d1b9fd64fca_key"
-  deploy/keys/credentials.tar.gz.enc /tmp/credentials.tar /tmp;
-  fi
+- deploy/travis/decrypt.sh "$encrypted_2d1b9fd64fca_key" "$encrypted_2d1b9fd64fca_iv"
+  deploy/keys/credentials.tar.gz.enc /tmp/credentials.tar /tmp
