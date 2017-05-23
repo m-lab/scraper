@@ -3,6 +3,10 @@
 # Fills in deployment templates.  Depending on when your version of python 2.7
 # was released, this code might not work.  In particular, prior to the fix of
 #  http://bugs.python.org/issue17078
+# string.safe_substitute was broken for the use case in mlabconfig. Travis has a
+# recent-enough version, and if you are trying to run th script locally and you
+# end up with strings like "{{IMAGE" in your file without a closing "}}", then
+# your version of python does not have the bugfix.
 
 mkdir -p claims
 mkdir -p deployment
