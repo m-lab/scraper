@@ -45,6 +45,8 @@ spec:
       - name: volume-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
         persistentVolumeClaim:
           claimName: claim-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
+      nodeSelector:
+        scraper-node: 'true'
       containers:
         - name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
           image: '{{IMAGE_URL}}'

@@ -27,21 +27,23 @@ course, need your own cluster!  I created the cluster in staging with the
 following command line:
 ```bash
 gcloud container \
-  --project "mlab-sandbox" clusters create "scraper-cluster" \
+  --project "mlab-oti" clusters create "scraper-cluster" \
   --zone "us-central1-a" \
   --machine-type "n1-standard-1" \
   --image-type "GCI" \
-  --disk-size "100" \
+  --disk-size "40" \
   --scopes "https://www.googleapis.com/auth/cloud-platform","https://www.googleapis.com/auth/spreadsheets" \
-  --num-nodes "150" \
+  --num-nodes "200" \
   --network "default" \
   --enable-cloud-logging \
+  --node-labels=scraper-node=true \
   --no-enable-cloud-monitoring
 
 gcloud --project=mlab-sandbox container node-pools create prometheus-pool \
-  --cluster=scraper-cluster
-  --num-nodes=1
-  --machine-type=n1-standard-4
+  --cluster=scraper-cluster \
+  --num-nodes=2 \
+  --node-labels=prometheus-node=true \
+  --machine-type=n1-standard-8
 ```
 
 The cluster, once it is created (and this step need only be done once per
