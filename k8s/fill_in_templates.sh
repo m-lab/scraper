@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Fills in deployment templates.  Depending on when your version of python 2.7
+# was released, this code might not work.  In particular, prior to the fix of
+#  http://bugs.python.org/issue17078
+
 mkdir -p claims
 mkdir -p deployment
 
@@ -13,9 +17,6 @@ GIGABYTES=${2:?Please give an integer number of gigabytes: $USAGE}
     --template_output=deployment/deploy-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}.yml \
     --select="${PATTERN}"
 
-# Must do this sub before the mlabconfig call due to the fix for
-#  http://bugs.python.org/issue17078
-# not (yet) having propagated globally.
 sed -e "s/{{GIGABYTES}}/${GIGABYTES}/" claim.yml > claim_template.yml
 ./operator/plsync/mlabconfig.py \
     --format=scraper_kubernetes \

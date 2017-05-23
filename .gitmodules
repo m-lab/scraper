@@ -1,8 +1,8 @@
 [submodule "travis"]
-	path = deploy/travis
+	path = travis
 	url = https://github.com/m-lab/travis.git
 [submodule "operator"]
-	path = deploy/operator
+	path = operator
 	url = https://github.com/m-lab/operator.git
 [submodule "git-hooks"]
 	path = git-hooks
