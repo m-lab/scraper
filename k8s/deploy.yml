@@ -21,6 +21,10 @@ metadata:
     app: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
     version: test
 spec:
+  # Rollbacks are accomplished via the autodeploy meachanism, so no need to keep
+  # around old configs and old ReplicaSets. They just use up kubernetes
+  # resources and slow everything down.
+  revisionHistoryLimit: 0
   replicas: 1
   template:
     metadata:

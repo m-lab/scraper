@@ -14,8 +14,9 @@ cd $TRAVIS_BUILD_DIR
 
 if [[ "$1" == staging ]]
 then
-    ./k8s/fill_in_templates.sh 'mlab4' 11
-    ./k8s/fill_in_templates.sh 'ndt.*mlab4' 110
+    # no mlab4s until more bugs are worked out
+    #./k8s/fill_in_templates.sh 'mlab4' 11
+    #./k8s/fill_in_templates.sh 'ndt.*mlab4' 110
     cat operator/plsync/canary_machines.txt | (
         while read
         do
