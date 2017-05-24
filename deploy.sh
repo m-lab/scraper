@@ -71,7 +71,7 @@ then
       set -x)
   PROJECT=mlab-staging
   BUCKET=scraper-mlab-staging
-  NAMESPACE=scraper
+  DATASTORE_NAMESPACE=scraper
   CLUSTER=scraper-cluster
   ZONE=us-central1-a
 else
@@ -82,7 +82,7 @@ fi
 ./travis/substitute_values.sh deployment \
     IMAGE_URL gcr.io/${PROJECT}/github-m-lab-scraper:${GIT_COMMIT} \
     GCS_BUCKET ${BUCKET} \
-    NAMESPACE ${NAMESPACE} \
+    NAMESPACE ${DATASTORE_NAMESPACE} \
     GITHUB_COMMIT http://github.com/m-lab/scraper/tree/${GIT_COMMIT}
 
 ./travis/build_and_push_container.sh \
@@ -93,11 +93,11 @@ gcloud --project=${PROJECT} container clusters get-credentials ${CLUSTER} --zone
 kubectl apply -f k8s/namespace.yml
 kubectl apply -f k8s/storage-class.yml
 
-CLAIMSOUT=$(mktmp claims.XXXXXX)
+CLAIMSOUT=$(mktemp claims.XXXXXX)
 kubectl apply -f claims/ > ${CLAIMSOUT} || (cat ${CLAIMSOUT} && exit 1)
 echo Applied $(wc -l ${CLAIMSOUT} | awk '{print $1}') claims
 
-DEPLOYOUT=$(mktmp deployments.XXXXXX)
+DEPLOYOUT=$(mktemp deployments.XXXXXX)
 kubectl apply -f deployment/ > ${DEPLOYOUT} || (cat ${DEPLOYOUT} && exit 1)
 echo Applied $(wc -l ${DEPLOYOUT} | awk '{print $1}') deployments
 
