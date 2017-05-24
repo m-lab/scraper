@@ -56,6 +56,7 @@ function fill_in_templates() {
 
 if [[ "$1" == staging ]]
 then
+  # These are the machines we deploy staging images to.
   # no mlab4s until more bugs are worked out
   #fill_in_templates 'mlab4' 11
   #fill_in_templates 'ndt.*mlab4' 110
@@ -69,6 +70,7 @@ then
       done
       # Re-enable -x to aid debugging
       set -x)
+  KEY_FILE=/tmp/staging-secret-key.json
   PROJECT=mlab-staging
   BUCKET=scraper-mlab-staging
   DATASTORE_NAMESPACE=scraper
@@ -79,28 +81,40 @@ else
   exit 1
 fi
 
+if [[ $2 == travis ]]; then
+  # On Travis, use a service account
+  gcloud auth activate-service-account --key-file ${KEY_FILE}
+fi
+
+# Set up the deploy.yml files
 ./travis/substitute_values.sh deployment \
     IMAGE_URL gcr.io/${PROJECT}/github-m-lab-scraper:${GIT_COMMIT} \
     GCS_BUCKET ${BUCKET} \
     NAMESPACE ${DATASTORE_NAMESPACE} \
     GITHUB_COMMIT http://github.com/m-lab/scraper/tree/${GIT_COMMIT}
 
+# Build the container and save it to GCR
 ./travis/build_and_push_container.sh \
     gcr.io/${PROJECT}/github-m-lab-scraper:${GIT_COMMIT} ${PROJECT}
 
+# Make sure kubectl is associated with the right cluster
 gcloud --project=${PROJECT} container clusters get-credentials ${CLUSTER} --zone=${ZONE}
 
+# Define terms for later use in our claims and deployments
 kubectl apply -f k8s/namespace.yml
 kubectl apply -f k8s/storage-class.yml
 
+# Define all our claims
 CLAIMSOUT=$(mktemp claims.XXXXXX)
 kubectl apply -f claims/ > ${CLAIMSOUT} || (cat ${CLAIMSOUT} && exit 1)
 echo Applied $(wc -l ${CLAIMSOUT} | awk '{print $1}') claims
 
+# Define all our deployments
 DEPLOYOUT=$(mktemp deployments.XXXXXX)
 kubectl apply -f deployment/ > ${DEPLOYOUT} || (cat ${DEPLOYOUT} && exit 1)
 echo Applied $(wc -l ${DEPLOYOUT} | awk '{print $1}') deployments
 
+# Output debug info
 echo kubectl returned success from "'$0 $@'" for all operations.
 echo Suppressed output is appended below to aid future debugging:
 echo Output of successful "'kubectl apply -f claims/'":

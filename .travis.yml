@@ -17,10 +17,10 @@ script: coverage run --source='.' -m unittest discover --pattern='*_test.py'
 after_success: coveralls
 deploy:
 - provider: script
-  script:  gcloud auth activate-service-account --key-file /tmp/staging-secret-key.json && cd $TRAVIS_BUILD_DIR && ./deploy.sh staging
+  script:  ./deploy.sh staging
   on:
     repo: m-lab/scraper
     branch: staging
 before_install:
 - travis/decrypt.sh "$encrypted_2d1b9fd64fca_key" "$encrypted_2d1b9fd64fca_iv"
-  keys/credentials.tar.gz.enc /tmp/credentials.tar /tmp
+  keys/credentials.tar.gz.enc /tmp/credentials.tar.gz /tmp

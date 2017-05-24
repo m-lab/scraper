@@ -30,7 +30,6 @@ spec:
     metadata:
       annotations:
         prometheus.io/scrape: 'true'
-        prometheus.io/port: '9090'
         source: '{{GITHUB_COMMIT}}'
       name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
       labels:
