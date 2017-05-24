@@ -1,0 +1,30 @@
+# This file is a template, to be fleshed out by running:
+#    plsync/mlabconfig.py --format=scraper_kubernetes \
+#        --template_input=claim.yml \
+#        --template_output=volumes/claim-{{site}}-{{node}}-{{experiment}}-{{rsync_module}}.yml
+# and then post-processing the output to replace {{GIGABYTES}} with the right
+# number for each rsync endpoint.
+#
+# The plsync directory and its contents may be found in:
+#    https://github.com/m-lab/operator
+#
+# The template, once filled out, specifies the kubernetes storage deployment
+# for scraper.  The deployment may be deployed with:
+#    kubectl apply -f volumes/
+# If the deployment fails with the error "namespace does not exist", then run
+#    kubectl apply -f namespace.yml
+# to create the namespace, and then try the deployment again.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: claim-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
+  namespace: scraper
+  annotations:
+    volume.beta.kubernetes.io/storage-class: "slow"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{GIGABYTES}}Gi
+

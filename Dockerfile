@@ -4,7 +4,7 @@ MAINTAINER Peter Boothe <pboothe@google.com>
 RUN apt-get update && apt-get install -y rsync tar python-dev python-pip
 # Install all the python requirements
 ADD requirements.txt /requirements.txt
-RUN pip install -r requirements.txt
+RUN pip install -q -r requirements.txt
 # Install scraper
 ADD scraper.py /scraper.py
 RUN chmod +x /scraper.py
