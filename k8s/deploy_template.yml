@@ -31,7 +31,6 @@ spec:
       annotations:
         prometheus.io/scrape: 'true'
         prometheus.io/port: '9090'
-        prometheus.io/port2: '9100'
         source: '{{GITHUB_COMMIT}}'
       name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
       labels:
@@ -50,6 +49,8 @@ spec:
       containers:
         - name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
           image: '{{IMAGE_URL}}'
+          ports:
+          - containerPort: 9090
           env:
             - name: RSYNC_MODULE
               value: {{rsync_module}}
@@ -59,6 +60,8 @@ spec:
               value: '{{GCS_BUCKET}}'
             - name: DATASTORE_NAMESPACE
               value: '{{NAMESPACE}}'
+            - name: MAX_UNCOMPRESSED_SIZE
+              value: 50000000
           resources:
             requests:
               memory: "200Mi"

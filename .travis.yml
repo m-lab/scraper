@@ -12,13 +12,12 @@ install:
 - pip install -r requirements.txt
 - pip install -r test-requirements.txt
 - pip install coveralls
-- $TRAVIS_BUILD_DIR/travis/install_gcloud.sh
-- yes | ${HOME}/google-cloud-sdk/bin/gcloud components install kubectl
+- $TRAVIS_BUILD_DIR/travis/install_gcloud.sh kubectl
 script: coverage run --source='.' -m unittest discover --pattern='*_test.py'
 after_success: coveralls
 deploy:
 - provider: script
-  script: k8s/deploy.sh staging
+  script:  gcloud auth activate-service-account --key-file /tmp/staging-secret-key.json && cd $TRAVIS_BUILD_DIR && ./deploy.sh staging
   on:
     repo: m-lab/scraper
     branch: staging
