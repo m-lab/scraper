@@ -1,13 +1,26 @@
 #!/bin/bash
 
 # A script that builds and deploys scraper containers and their associated
-# storage. Meant to be called from the root directory of the repo with a single
-# argument: prod, staging, or a string ending in '-sandbox'
-#
-# This script should work on Travis and when run locally.
+# storage. Meant to be called from the root directory of the repo or by Travis
+# from wherever travis calls things. In the Travis case, it is expected that $2
+# will equal travis.
+
+USAGE="$0 [production|staging|arbitrary-string-sandbox] travis?"
+if [[ -n "$2" ]] && [[ "$2" != travis ]]; then
+  echo The second argument can only be the word travis or nothing at all.
+  echo $USAGE
+  exit 1
+fi
 
 set -e
 set -x
+
+if [[ $2 == travis ]]; then
+  cd $TRAVIS_BUILD_DIR
+  GIT_COMMIT=${TRAVIS_COMMIT}
+else
+  GIT_COMMIT=$(git log -n 1 | head -n 1 | awk '{print $2}')
+fi
 
 source "${HOME}/google-cloud-sdk/path.bash.inc"
 
@@ -17,13 +30,6 @@ if [[ -e deployment ]] || [[ -e claims ]]; then
 fi
 mkdir deployment
 mkdir claims
-
-if [[ -n "${TRAVIS_BUILD_DIR}" ]]; then
-  cd $TRAVIS_BUILD_DIR
-  GIT_COMMIT=${TRAVIS_COMMIT}
-else
-  GIT_COMMIT=$(git log -n 1 | head -n 1 | awk '{print $2}')
-fi
 
 # Fills in deployment templates.
 function fill_in_templates() {
@@ -44,6 +50,7 @@ function fill_in_templates() {
       --template_input=k8s/claim_template.yml \
       --template_output=${CLAIMS}/claim-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}.yml \
     --select="${PATTERN}"
+
   ./travis/substitute_values.sh ${CLAIMS} GIGABYTES ${GIGABYTES}
 }
 
@@ -62,31 +69,43 @@ then
       done
       # Re-enable -x to aid debugging
       set -x)
-  ./travis/substitute_values.sh deployment \
-    IMAGE_URL gcr.io/mlab-staging/github-m-lab-scraper:${GIT_COMMIT} \
-    GCS_BUCKET scraper-mlab-staging \
-    NAMESPACE scraper \
-    GITHUB_COMMIT http://github.com/m-lab/scraper/tree/${GIT_COMMIT}
-  ./travis/build_and_push_container.sh \
-    gcr.io/mlab-staging/github-m-lab-scraper:${GIT_COMMIT} mlab-staging
-  gcloud --project=mlab-staging container clusters get-credentials scraper-cluster --zone=us-central1-a
+  PROJECT=mlab-staging
+  BUCKET=scraper-mlab-staging
+  NAMESPACE=scraper
+  CLUSTER=scraper-cluster
+  ZONE=us-central1-a
 else
   echo "Bad argument to $0"
   exit 1
 fi
 
+./travis/substitute_values.sh deployment \
+    IMAGE_URL gcr.io/${PROJECT}/github-m-lab-scraper:${GIT_COMMIT} \
+    GCS_BUCKET ${BUCKET} \
+    NAMESPACE ${NAMESPACE} \
+    GITHUB_COMMIT http://github.com/m-lab/scraper/tree/${GIT_COMMIT}
+
+./travis/build_and_push_container.sh \
+    gcr.io/${PROJECT}/github-m-lab-scraper:${GIT_COMMIT} ${PROJECT}
+
+gcloud --project=${PROJECT} container clusters get-credentials ${CLUSTER} --zone=${ZONE}
+
 kubectl apply -f k8s/namespace.yml
 kubectl apply -f k8s/storage-class.yml
-kubectl apply -f claims/ > claimoutput || (cat claimoutput && exit 1)
-echo Applied $(wc -l claimoutput | awk '{print $1}') claims
-kubectl apply -f deployment/ > deploymentoutput || (cat deploymentoutput && exit 1)
-echo Applied $(wc -l deploymentoutput | awk '{print $1}') deployments
+
+CLAIMSOUT=$(mktmp claims.XXXXXX)
+kubectl apply -f claims/ > ${CLAIMSOUT} || (cat ${CLAIMSOUT} && exit 1)
+echo Applied $(wc -l ${CLAIMSOUT} | awk '{print $1}') claims
+
+DEPLOYOUT=$(mktmp deployments.XXXXXX)
+kubectl apply -f deployment/ > ${DEPLOYOUT} || (cat ${DEPLOYOUT} && exit 1)
+echo Applied $(wc -l ${DEPLOYOUT} | awk '{print $1}') deployments
 
 echo kubectl returned success from "'$0 $@'" for all operations.
 echo Suppressed output is appended below to aid future debugging:
 echo Output of successful "'kubectl apply -f claims/'":
-cat claimoutput
-rm claimoutput
+cat ${CLAIMSOUT}
+rm ${CLAIMSOUT}
 echo Output of successful "'kubectl apply -f deployment/'":
-cat deploymentoutput
-rm deploymentoutput
+cat ${DEPLOYOUT}
+rm ${DEPLOYOUT}
