@@ -82,7 +82,7 @@ echo Applied $(wc -l claimoutput | awk '{print $1}') claims
 kubectl apply -f deployment/ > deploymentoutput || (cat deploymentoutput && exit 1)
 echo Applied $(wc -l deploymentoutput | awk '{print $1}') deployments
 
-echo kubectl returned success from "'$1 $@'" for all operations.
+echo kubectl returned success from "'$0 $@'" for all operations.
 echo Suppressed output is appended below to aid future debugging:
 echo Output of successful "'kubectl apply -f claims/'":
 cat claimoutput
