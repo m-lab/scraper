@@ -61,7 +61,7 @@ spec:
             - name: DATASTORE_NAMESPACE
               value: '{{NAMESPACE}}'
             - name: MAX_UNCOMPRESSED_SIZE
-              value: 50000000
+              value: "50000000"
           resources:
             requests:
               memory: "200Mi"

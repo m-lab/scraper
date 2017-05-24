@@ -75,7 +75,18 @@ else
   exit 1
 fi
 
-#kubectl apply -f k8s/namespace.yml
-#kubectl apply -f k8s/storage-class.yml
-#kubectl apply -f claims/
-#kubectl apply -f deployment/
+kubectl apply -f k8s/namespace.yml
+kubectl apply -f k8s/storage-class.yml
+kubectl apply -f claims/ > claimoutput || (cat claimoutput && exit 1)
+echo Applied $(wc -l claimoutput | awk '{print $1}') claims
+kubectl apply -f deployment/ > deploymentoutput || (cat deploymentoutput && exit 1)
+echo Applied $(wc -l deploymentoutput | awk '{print $1}') deployments
+
+echo kubectl returned success from "'$1 $@'" for all operations.
+echo Suppressed output is appended below to aid future debugging:
+echo Output of successful "'kubectl apply -f claims/'":
+cat claimoutput
+rm claimoutput
+echo Output of successful "'kubectl apply -f deployment/'":
+cat deploymentoutput
+rm deploymentoutput
