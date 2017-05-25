@@ -18,8 +18,7 @@ metadata:
   name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
   namespace: scraper
   labels:
-    app: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
-    version: test
+    application: scraper
 spec:
   # Rollbacks are accomplished via the autodeploy meachanism, so no need to keep
   # around old configs and old ReplicaSets. They just use up kubernetes
@@ -33,8 +32,7 @@ spec:
         source: '{{GITHUB_COMMIT}}'
       name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
       labels:
-        app: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
-        version: test
+        application: scraper
         experiment: {{experiment}}
         machine: {{machine}}
         rsync_module: {{rsync_module}}
@@ -46,7 +44,7 @@ spec:
       nodeSelector:
         scraper-node: 'true'
       containers:
-        - name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
+        - name: scraper
           image: '{{IMAGE_URL}}'
           ports:
           - containerPort: 9090
