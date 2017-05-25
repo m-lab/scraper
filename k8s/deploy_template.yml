@@ -46,7 +46,7 @@ spec:
       nodeSelector:
         scraper-node: 'true'
       containers:
-        - name: {{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
+        - name: scraper
           image: '{{IMAGE_URL}}'
           ports:
           - containerPort: 9090
