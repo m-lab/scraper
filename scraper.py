@@ -390,7 +390,7 @@ def timestamp_from_filename(filename):
                                  int(match.group(7), 10))
 
 
-def create_tarfilename_template(day, host, experiment):
+def create_tarfilename_template(day, host, experiment, tarfile_directory):
     """Create a template tarfile name from the passed-in values.
 
     Tarfile names look like:
@@ -404,11 +404,12 @@ def create_tarfilename_template(day, host, experiment):
     filename_prefix = '%d%02d%02dT000000Z-%s-%s-%s-' % (
         day.year, day.month, day.day, node, site, experiment)
     filename_suffix = '.tgz'
-    return filename_prefix + '%04d' + filename_suffix
+    return os.path.join(tarfile_directory,
+                        filename_prefix + '%04d' + filename_suffix)
 
 
 def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
-                              max_uncompressed_size):
+                              max_uncompressed_size, tarfile_directory):
     """Create tarfiles, and yield the name of each tarfile as it is made.
 
     Because one day may contain a lot of data, we create a series of tarfiles,
@@ -427,7 +428,8 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
       A tuple of the name of the tarfile created, the most recent mtime of
       any tarfile's component files, and the number of files in the tarfile
     """
-    tarfile_template = create_tarfilename_template(day, host, experiment)
+    tarfile_template = create_tarfilename_template(day, host, experiment,
+                                                   tarfile_directory)
     day_dir = '%d/%02d/%02d' % (day.year, day.month, day.day)
     tarfile_size = 0
     tarfile_files = []
@@ -748,7 +750,8 @@ def upload_if_allowed(args, sync_status, destination,
         max_mtime = None
         for tgz_filename, max_mtime, num_files in create_temporary_tarfiles(
                 args.tar_binary, destination, day, args.rsync_host,
-                args.rsync_module, args.max_uncompressed_size):
+                args.rsync_module, args.max_uncompressed_size,
+                args.tarfile_directory):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_module, args.bucket)
             FILES_UPLOADED.labels(bucket=args.bucket).inc(num_files)

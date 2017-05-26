@@ -465,8 +465,8 @@ BADBADBAD
             scraper.create_tarfilename_template(
                 datetime.date(2015, 7, 6),
                 'ndt.iupui.mlab1.acc01.measurement-lab.org',
-                'ndt'),
-            '20150706T000000Z-mlab1-acc01-ndt-%04d.tgz')
+                'ndt', '/tmp'),
+            '/tmp/20150706T000000Z-mlab1-acc01-ndt-%04d.tgz')
 
 
 class TestScraperInTempDir(unittest.TestCase):
@@ -571,7 +571,7 @@ class TestScraperInTempDir(unittest.TestCase):
             self.assertTrue(os.path.exists('test3.txt.gz'))
         gen = scraper.create_temporary_tarfiles(
             '/bin/tar', self.temp_d, datetime.date(2016, 1, 28),
-            'mlab9.dne04.measurement-lab.org', 'exper', 100000)
+            'mlab9.dne04.measurement-lab.org', 'exper', 100000, '')
         fname, _, count = gen.next()
         self.assertEqual(count, 3)
         self.assertTrue(os.path.isfile(fname))
@@ -598,7 +598,7 @@ class TestScraperInTempDir(unittest.TestCase):
         # separate tarfile for each test file.
         gen = scraper.create_temporary_tarfiles(
             '/bin/tar', self.temp_d, datetime.date(2016, 1, 28),
-            'mlab9.dne04.measurement-lab.org', 'exper', 4)
+            'mlab9.dne04.measurement-lab.org', 'exper', 4, '')
         gen.next()
         table1 = subprocess.check_output([
             '/bin/tar', 'tfz',
@@ -624,7 +624,7 @@ class TestScraperInTempDir(unittest.TestCase):
         # separate tarfile for each test file.
         gen = scraper.create_temporary_tarfiles(
             '/bin/tar', self.temp_d, datetime.date(2016, 1, 28),
-            'mlab9.dne04.measurement-lab.org', 'exper', 4)
+            'mlab9.dne04.measurement-lab.org', 'exper', 4, '')
         gen.next()
         table1 = subprocess.check_output([
             '/bin/tar', 'tfz',

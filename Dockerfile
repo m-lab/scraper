@@ -23,4 +23,5 @@ CMD /run_scraper.py \
     --datastore_namespace=$DATASTORE_NAMESPACE \
     --metrics_port=${METRICS_PORT:-9090} \
     --expected_wait_time=${EXPECTED_WAIT_TIME:-1800} \
-    --max_uncompressed_size=${MAX_UNCOMPRESSED_SIZE:-1000000000}
+    --max_uncompressed_size=${MAX_UNCOMPRESSED_SIZE:-1000000000} \
+    --tarfile_directory=${TARFILE_DIRECTORY:-/tmp}

@@ -59,15 +59,19 @@ spec:
               value: '{{NAMESPACE}}'
             - name: MAX_UNCOMPRESSED_SIZE
               value: "50000000"
+            - name: TARFILE_DIRECTORY
+              value: "/tarfiles"
           resources:
             requests:
               memory: "200Mi"
               cpu: "30m"
             limits:
-              memory: "200Mi"
+              memory: "400Mi"
               cpu: "30m"
           volumeMounts:
           - mountPath: /scraper_data
+            name: volume-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
+          - mountPath: /tarfiles
             name: volume-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
         - image: prom/node-exporter:v0.13.0
           name: fs-exporter
