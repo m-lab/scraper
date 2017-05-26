@@ -150,6 +150,12 @@ def parse_cmdline(args):
         help='The maximum number of bytes in an uncompressed tarfile (default '
         'is 1,000,000,000 = 1 GB)')
     parser.add_argument(
+        '--tarfile_directory',
+        metavar='DIRECTORY',
+        type=str,
+        default='/tmp',
+        help='The directory where temporary tarfiles will live')
+    parser.add_argument(
         '--bucket',
         metavar='BUCKET',
         type=str,
