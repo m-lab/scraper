@@ -116,8 +116,6 @@ gcloud --project=${PROJECT} container clusters get-credentials ${CLUSTER} --zone
 kubectl apply -f k8s/namespace.yml
 kubectl apply -f k8s/storage-class.yml
 
-exit 1
-
 # Define all our claims
 CLAIMSOUT=$(mktemp claims.XXXXXX)
 kubectl apply -f claims/ > ${CLAIMSOUT} || (cat ${CLAIMSOUT} && exit 1)
