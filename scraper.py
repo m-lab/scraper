@@ -447,13 +447,11 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
                     (file_timestamp is None or
                      file_timestamp != prev_timestamp)):
                 tarfile_name = tarfile_template % tarfile_index
-                try:
-                    create_tarfile(tar_binary, tarfile_name, tarfile_files)
-                    logging.info('Created local file %s', tarfile_name)
-                    yield tarfile_name, max_mtime, len(tarfile_files)
-                finally:
-                    os.remove(tarfile_name)
-                    logging.info('Removed local file %s', tarfile_name)
+                create_tarfile(tar_binary, tarfile_name, tarfile_files)
+                logging.info('Created local file %s', tarfile_name)
+                yield tarfile_name, max_mtime, len(tarfile_files)
+                os.remove(tarfile_name)
+                logging.info('Removed local file %s', tarfile_name)
                 tarfile_files = []
                 tarfile_size = 0
                 tarfile_index += 1
@@ -462,13 +460,11 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
             prev_timestamp = file_timestamp
         if tarfile_files:
             tarfile_name = tarfile_template % tarfile_index
-            try:
-                create_tarfile(tar_binary, tarfile_name, tarfile_files)
-                logging.info('Created local file %s', tarfile_name)
-                yield tarfile_name, max_mtime, len(tarfile_files)
-            finally:
-                os.remove(tarfile_name)
-                logging.info('Removed local file %s', tarfile_name)
+            create_tarfile(tar_binary, tarfile_name, tarfile_files)
+            logging.info('Created local file %s', tarfile_name)
+            yield tarfile_name, max_mtime, len(tarfile_files)
+            os.remove(tarfile_name)
+            logging.info('Removed local file %s', tarfile_name)
 
 
 # The GCS upload mechanism loads the item to be uploaded into RAM. This means
