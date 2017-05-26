@@ -54,12 +54,24 @@ function fill_in_templates() {
   ./travis/substitute_values.sh ${CLAIMS} GIGABYTES ${GIGABYTES}
 }
 
-if [[ "$1" == staging ]]
+if [[ "$1" == production ]]
+then
+  # We need more quota to support these numbers
+  # TODO(dev) get 100+ T of quota
+  # No mlab4s in prod until our quota goes up.
+  fill_in_templates '.*\.mlab[123]\.[a-z]{3}\d\d\..*' 10 claims deployment
+  fill_in_templates '.*ndt.*\.mlab[123]\.[a-z]{3}\d\d\..*' 110 claims deployment
+  PROJECT=mlab-oti
+  BUCKET=scraper-mlab-oti
+  DATASTORE_NAMESPACE=scraper
+  CLUSTER=scraper-cluster
+  ZONE=us-central1-a
+elif [[ "$1" == staging ]]
 then
   # These are the machines we deploy staging images to.
   # no mlab4s until more bugs are worked out
-  #fill_in_templates 'mlab4' 11
-  #fill_in_templates 'ndt.*mlab4' 110
+  fill_in_templates 'mlab4' 11 claims deployment
+  fill_in_templates 'ndt.*mlab4' 110 claims deployment
   cat operator/plsync/canary_machines.txt | (
       # Disable -x to prevent build log spam
       set +x
@@ -120,6 +132,7 @@ echo Suppressed output is appended below to aid future debugging:
 echo Output of successful "'kubectl apply -f claims/'":
 cat ${CLAIMSOUT}
 rm ${CLAIMSOUT}
+
 echo Output of successful "'kubectl apply -f deployment/'":
 cat ${DEPLOYOUT}
 rm ${DEPLOYOUT}
