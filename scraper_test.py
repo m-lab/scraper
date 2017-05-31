@@ -570,8 +570,8 @@ class TestScraperInTempDir(unittest.TestCase):
             self.assertFalse(os.path.exists('test3.txt'))
             self.assertTrue(os.path.exists('test3.txt.gz'))
         gen = scraper.create_temporary_tarfiles(
-            '/bin/tar', self.temp_d, datetime.date(2016, 1, 28),
-            'mlab9.dne04.measurement-lab.org', 'exper', 100000, '')
+            '/bin/tar', '20160128T000000Z-mlab9-dne04-exper-%04d.tgz',
+            self.temp_d, datetime.date(2016, 1, 28), 100000)
         fname, _, count = gen.next()
         self.assertEqual(count, 3)
         self.assertTrue(os.path.isfile(fname))
@@ -597,8 +597,8 @@ class TestScraperInTempDir(unittest.TestCase):
         # By setting the max filesize as 4 bytes, we will end up creating a
         # separate tarfile for each test file.
         gen = scraper.create_temporary_tarfiles(
-            '/bin/tar', self.temp_d, datetime.date(2016, 1, 28),
-            'mlab9.dne04.measurement-lab.org', 'exper', 4, '')
+            '/bin/tar', '20160128T000000Z-mlab9-dne04-exper-%04d.tgz',
+            self.temp_d, datetime.date(2016, 1, 28), 4)
         gen.next()
         table1 = subprocess.check_output([
             '/bin/tar', 'tfz',
@@ -623,8 +623,8 @@ class TestScraperInTempDir(unittest.TestCase):
         # By setting the max filesize as 4 bytes, we will end up creating a
         # separate tarfile for each test file.
         gen = scraper.create_temporary_tarfiles(
-            '/bin/tar', self.temp_d, datetime.date(2016, 1, 28),
-            'mlab9.dne04.measurement-lab.org', 'exper', 4, '')
+            '/bin/tar', '20160128T000000Z-mlab9-dne04-exper-%04d.tgz',
+            self.temp_d, datetime.date(2016, 1, 28), 4)
         gen.next()
         table1 = subprocess.check_output([
             '/bin/tar', 'tfz',
