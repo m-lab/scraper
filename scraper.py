@@ -330,7 +330,7 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
                       os.getcwd(), tarfile_name)
         sys.exit(1)
 
-    command = [tar_binary, 'cfz', tarfile_name, '--null', '-T']
+    command = [tar_binary, 'cfz', tarfile_name, '--null', '--files-from']
     try:
         with tempfile.NamedTemporaryFile() as temp:
             temp.write('\0'.join(component_files))
