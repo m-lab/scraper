@@ -329,9 +329,14 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
                       'creation of another file of the same name',
                       os.getcwd(), tarfile_name)
         sys.exit(1)
-    command = ([tar_binary, 'cfz', tarfile_name] + component_files)
+
+    command = [tar_binary, 'cfz', tarfile_name, '--null', '-T']
     try:
-        subprocess.check_call(command)
+        with tempfile.NamedTemporaryFile() as temp:
+            temp.write('\0'.join(component_files))
+            temp.flush()
+            command.append(temp.name)
+            subprocess.check_call(command)
     except subprocess.CalledProcessError as error:
         logging.error('tarfile creation ("%s") failed: %s', ' '.join(command),
                       str(error))
@@ -408,17 +413,6 @@ def create_tarfilename_template(day, host, experiment, tarfile_directory):
                         filename_prefix + '%04d' + filename_suffix)
 
 
-# The maximum number of bytes than can be used for command-line args.
-#
-# Value is from https://www.in-ulm.de/~mascheck/various/argmax/
-#
-# These bytes are also used up by environment variables, so in an effort to not
-# get close to the limit let's never use too much more than half of the
-# available space.  This is a too-cautious heuristic, but discovering the
-# precise correct value is a rabbithole and precaution doesn't hurt us.
-ARG_MAX = 131072
-
-
 def create_temporary_tarfiles(tar_binary, tarfile_template, directory, day,
                               max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
@@ -443,7 +437,6 @@ def create_temporary_tarfiles(tar_binary, tarfile_template, directory, day,
     tarfile_files = []
     tarfile_index = 0
     max_mtime = 0
-    arg_size = 0
     prev_timestamp = None
     with chdir(directory):
         for filename in sorted(all_files(day_dir)):
@@ -452,8 +445,7 @@ def create_temporary_tarfiles(tar_binary, tarfile_template, directory, day,
             filesize = filestat.st_size
             max_mtime = max(max_mtime, int(filestat.st_mtime))
             if (tarfile_files and
-                    (tarfile_size + filesize > max_uncompressed_size or
-                     arg_size > ARG_MAX // 2) and
+                    tarfile_size + filesize > max_uncompressed_size and
                     (file_timestamp is None or
                      file_timestamp != prev_timestamp)):
                 tarfile_name = tarfile_template % tarfile_index
@@ -464,11 +456,9 @@ def create_temporary_tarfiles(tar_binary, tarfile_template, directory, day,
                 logging.info('Removed local file %s', tarfile_name)
                 tarfile_files = []
                 tarfile_size = 0
-                arg_size = 0
                 tarfile_index += 1
             tarfile_files.append(filename)
             tarfile_size += filesize
-            arg_size += len(filename)
             prev_timestamp = file_timestamp
         if tarfile_files:
             tarfile_name = tarfile_template % tarfile_index
