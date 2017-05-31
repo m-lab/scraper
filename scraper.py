@@ -762,6 +762,7 @@ def upload_stale_disk(args, sync_status, destination, storage_service):
         logging.info('No stale data found')
         return
     else:
+        days.pop()  # The last day is not okay
         last_okay_day = days[-1]
         logging.warning('Stale data found: %s', str(last_okay_day))
         upload_up_to_date(args, sync_status, destination, storage_service,

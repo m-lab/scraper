@@ -656,6 +656,42 @@ class TestScraperInTempDir(unittest.TestCase):
         self.assertEqual(
             ['data2.txt'], os.listdir(os.path.join(self.temp_d, '2009/02/28')))
 
+    @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
+    @mock.patch.object(scraper, 'upload_up_to_date')
+    def test_initial_upload_empty_disk(self, new_upload):
+        scraper.upload_stale_disk({}, None, '.', None)
+        new_upload.assert_not_called()
+
+    @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
+    @mock.patch.object(scraper, 'upload_up_to_date')
+    def test_initial_upload_no_safe_dirs(self, new_upload):
+        os.makedirs('2016/01/28')
+        scraper.upload_stale_disk({}, None, '.', None)
+        new_upload.assert_not_called()
+
+    @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
+    @mock.patch.object(scraper, 'upload_up_to_date')
+    @testfixtures.log_capture()
+    def test_initial_upload_one_safe_dir(self, new_upload):
+        new_upload.return_value = None
+        os.makedirs('2016/01/26')
+        os.makedirs('2016/01/27')
+        self.assertEqual(new_upload.call_count, 0)
+        scraper.upload_stale_disk({}, None, '.', None)
+        self.assertEqual(new_upload.call_count, 1)
+        self.assertEqual(new_upload.call_args[0][-1],
+                         datetime.date(2016, 1, 26))
+
+    @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
+    @mock.patch.object(scraper, 'upload_up_to_date')
+    @testfixtures.log_capture()
+    def test_upload_if_allowed(self, new_upload):
+        self.assertEqual(new_upload.call_count, 0)
+        scraper.upload_if_allowed({}, None, '.', None)
+        self.assertEqual(new_upload.call_count, 1)
+        self.assertEqual(new_upload.call_args[0][-1],
+                         datetime.date(2016, 1, 27))
+
 
 if __name__ == '__main__':  # pragma: no cover
     unittest.main()
