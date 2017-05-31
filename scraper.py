@@ -329,9 +329,14 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
                       'creation of another file of the same name',
                       os.getcwd(), tarfile_name)
         sys.exit(1)
-    command = ([tar_binary, 'cfz', tarfile_name] + component_files)
+
+    command = [tar_binary, 'cfz', tarfile_name, '--null', '--files-from']
     try:
-        subprocess.check_call(command)
+        with tempfile.NamedTemporaryFile() as temp:
+            temp.write('\0'.join(component_files))
+            temp.flush()
+            command.append(temp.name)
+            subprocess.check_call(command)
     except subprocess.CalledProcessError as error:
         logging.error('tarfile creation ("%s") failed: %s', ' '.join(command),
                       str(error))
@@ -408,8 +413,8 @@ def create_tarfilename_template(day, host, experiment, tarfile_directory):
                         filename_prefix + '%04d' + filename_suffix)
 
 
-def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
-                              max_uncompressed_size, tarfile_directory):
+def create_temporary_tarfiles(tar_binary, tarfile_template, directory, day,
+                              max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
 
     Because one day may contain a lot of data, we create a series of tarfiles,
@@ -418,18 +423,15 @@ def create_temporary_tarfiles(tar_binary, directory, day, host, experiment,
 
     Args:
       tar_binary: the full pathname for the tar binary
+      tarfile_template: a string to serve as the tarfile filename template
       directory: the directory at the root of the file hierarchy
       day: the date for the tarfile
-      host: the hostname for the tar file
-      experiment: the experiment with data contained in this tarfile
       max_uncompressed_size: the max size of an individual tarfile
 
     Yields:
       A tuple of the name of the tarfile created, the most recent mtime of
       any tarfile's component files, and the number of files in the tarfile
     """
-    tarfile_template = create_tarfilename_template(day, host, experiment,
-                                                   tarfile_directory)
     day_dir = '%d/%02d/%02d' % (day.year, day.month, day.day)
     tarfile_size = 0
     tarfile_files = []
@@ -712,9 +714,6 @@ def init(args):  # pragma: no cover
                                args.rsync_module)
     if not os.path.isdir(destination):
         os.makedirs(destination)
-    # TODO(https://github.com/m-lab/scraper/issues/20): create a "binaries" or
-    # "constants" object to pass around instead of the strings for the full path
-    # of the binaries to execute.
     return (rsync_url, status, destination, storage_service)
 
 
@@ -744,10 +743,12 @@ def upload_if_allowed(args, sync_status, destination,
     for day in find_all_days_to_upload(destination,
                                        candidate_last_archived_date):
         max_mtime = None
+        tarfile_template = create_tarfilename_template(day, args.rsync_host,
+                                                       args.rsync_module,
+                                                       args.tarfile_directory)
         for tgz_filename, max_mtime, num_files in create_temporary_tarfiles(
-                args.tar_binary, destination, day, args.rsync_host,
-                args.rsync_module, args.max_uncompressed_size,
-                args.tarfile_directory):
+                args.tar_binary, tarfile_template, destination, day,
+                args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_module, args.bucket)
             FILES_UPLOADED.labels(bucket=args.bucket).inc(num_files)

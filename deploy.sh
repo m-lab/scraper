@@ -57,8 +57,7 @@ function fill_in_templates() {
 if [[ "$1" == production ]]
 then
   # We need more quota to support these numbers
-  # TODO(dev) get 100+ T of quota
-  # No mlab4s in prod until our quota goes up.
+  # No mlab4s in prod for now.  They are in staging.
   fill_in_templates '.*\.mlab[123]\.[a-z]{3}\d\d\..*' 10 claims deployment
   fill_in_templates '.*ndt.*\.mlab[123]\.[a-z]{3}\d\d\..*' 110 claims deployment
   PROJECT=mlab-oti
