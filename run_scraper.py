@@ -30,9 +30,9 @@ import random
 import sys
 import time
 
-import googleapiclient
 import oauth2client
 import prometheus_client
+import retry.api
 import scraper
 
 # The monitoring variables exported by the prometheus_client
@@ -169,6 +169,13 @@ def main(argv):  # pragma: no cover
     args = parse_cmdline(argv[1:])
     rsync_url, status, destination, storage_service = scraper.init(args)
     prometheus_client.start_http_server(args.metrics_port)
+    # First, clear out any existing cache that can be cleared.
+    with UPLOAD_RUNS.time():
+        # Upload except for the most recent day on disk.
+        retry.api.retry_call(scraper.upload_stale_disk,
+                             (args, status, destination, storage_service),
+                             exceptions=scraper.RecoverableScraperException)
+    # Now, download then upload forever.
     while True:
         try:
             logging.info('Scraping %s', rsync_url)
@@ -178,8 +185,7 @@ def main(argv):  # pragma: no cover
                 scraper.upload_if_allowed(args, status, destination,
                                           storage_service)
             SCRAPER_SUCCESS.labels(message='success').inc()
-        except (SystemExit, AssertionError,
-                googleapiclient.errors.HttpError) as error:
+        except scraper.RecoverableScraperException as error:
             logging.error('Scrape and upload failed: %s', error.message)
             SCRAPER_SUCCESS.labels(message=str(error.message)).inc()
         # In order to prevent a thundering herd of rsync jobs, we spread the

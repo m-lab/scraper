@@ -109,7 +109,7 @@ BADBADBAD
 
     @testfixtures.log_capture()
     def test_list_rsync_files_fails(self, log):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(scraper.RecoverableScraperException):
             scraper.list_rsync_files('/bin/false', 'localhost')
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
@@ -164,7 +164,7 @@ BADBADBAD
 
     @testfixtures.log_capture()
     def test_download_files_fails_and_dies(self, log):
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(scraper.RecoverableScraperException):
             scraper.download_files('/bin/false', 'localhost/',
                                    ['2016/10/26/DNE1', '2016/10/26/DNE2'],
                                    '/tmp')
@@ -323,7 +323,7 @@ BADBADBAD
     @testfixtures.log_capture()
     def test_get_last_archived_date_bad_date(self, patched_get, log):
         status = scraper.SyncStatus(None, None)
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(scraper.NonRecoverableScraperException):
             patched_get.return_value = dict(
                 lastsuccessfulcollection='2009-13-10')
             status.get_last_archived_date()
@@ -525,24 +525,23 @@ class TestScraperInTempDir(unittest.TestCase):
         self.assertEqual(file('2016/01/28/test2.txt').read(), 'goodbye')
 
     @testfixtures.log_capture()
-    def test_create_tarfile_fails_on_existing_tarfile(self, log):
+    def test_create_tarfile_succeeds_on_existing_tarfile(self, log):
         os.makedirs('2016/01/28')
         file('2016/01/28/test1.txt', 'w').write('hello')
         file('2016/01/28/test2.txt', 'w').write('goodbye')
         file('test.tgz', 'w').write('in the way')
         self.assertEqual(file('test.tgz').read(), 'in the way')
-        with self.assertRaises(SystemExit):
-            scraper.create_tarfile('/bin/tar', 'test.tgz',
-                                   ['2016/01/28/test1.txt',
-                                    '2016/01/28/test2.txt'])
-        self.assertIn('ERROR', [x.levelname for x in log.records])
+        scraper.create_tarfile('/bin/tar', 'test.tgz',
+                               ['2016/01/28/test1.txt',
+                                '2016/01/28/test2.txt'])
+        self.assertIn('WARNING', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
     def test_create_tarfile_fails_on_tar_failure(self, log):
         os.makedirs('2016/01/28')
         file('2016/01/28/test1.txt', 'w').write('hello')
         file('2016/01/28/test2.txt', 'w').write('goodbye')
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(scraper.NonRecoverableScraperException):
             scraper.create_tarfile('/bin/false', 'test.tgz',
                                    ['2016/01/28/test1.txt',
                                     '2016/01/28/test2.txt'])
@@ -553,7 +552,7 @@ class TestScraperInTempDir(unittest.TestCase):
         os.makedirs('2016/01/28')
         file('2016/01/28/test1.txt', 'w').write('hello')
         file('2016/01/28/test2.txt', 'w').write('goodbye')
-        with self.assertRaises(SystemExit):
+        with self.assertRaises(scraper.NonRecoverableScraperException):
             # Executes successfully, but fails to create the tarfile.
             scraper.create_tarfile('/bin/true', 'test.tgz',
                                    ['2016/01/28/test1.txt',
