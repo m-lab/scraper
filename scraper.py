@@ -513,7 +513,7 @@ def upload_tarfile(service, tgz_filename, date, experiment,
       googleapiclient.errors.HttpError on upload failure
     """
     name = '%s/%d/%02d/%02d/%s' % (experiment, date.year, date.month, date.day,
-                                   tgz_filename)
+                                   os.path.basename(tgz_filename))
     media = apiclient.http.MediaFileUpload(tgz_filename,
                                            chunksize=TARFILE_UPLOAD_CHUNK_SIZE,
                                            resumable=True)
