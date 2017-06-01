@@ -34,6 +34,7 @@ import subprocess
 import tempfile
 
 import apiclient
+import googleapiclient.errors
 import prometheus_client
 import retry
 
@@ -495,12 +496,21 @@ TARFILE_UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024
 
 
 @TARFILE_UPLOAD_TIME.time()
+@retry.retry(exceptions=googleapiclient.errors.HttpError,
+             backoff=2,      # Exponential backoff with a multiplier of 2
+             jitter=(1, 5),  # plus a random number of seconds from 1 to 5
+             max_delay=300,  # but never more than 5 minutes.
+             logger=logging.getLogger())
 def upload_tarfile(service, tgz_filename, date, experiment,
                    bucket):  # pragma: no cover
     """Uploads a tarfile to Google Cloud Storage for later processing.
 
-    Puts the file into a GCS bucket. If a file of that same name already
-    exists, the file is overwritten.  If the upload fails, HttpError is raised.
+    Puts the file into a GCS bucket. If a file of that same name already exists,
+    the file is overwritten.  If the upload fails, the upload is retried until
+    it succeeds, although we perform exponential backoff with a maximum wait
+    time of 5 minutes between attempts.  If the GCS service becomes unavailable
+    in the longer term, then scraper won't work anyway, and retrying will work
+    around temporary blips in service or network reachability.
 
     Args:
       service: the service object returned from discovery
@@ -508,9 +518,6 @@ def upload_tarfile(service, tgz_filename, date, experiment,
       date: the date for the data
       experiment: the subdirectory of the bucket for this data
       bucket: the name of the GCS bucket
-
-    Raises:
-      googleapiclient.errors.HttpError on upload failure
     """
     name = '%s/%d/%02d/%02d/%s' % (experiment, date.year, date.month, date.day,
                                    os.path.basename(tgz_filename))
