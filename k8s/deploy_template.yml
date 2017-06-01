@@ -73,7 +73,7 @@ spec:
               cpu: "30m"
             limits:
               memory: "400Mi"
-              cpu: "30m"
+              cpu: "100m"
           volumeMounts:
           - mountPath: /scraper_data
             name: volume-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
