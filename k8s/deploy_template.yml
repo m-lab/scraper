@@ -60,7 +60,11 @@ spec:
             - name: MAX_UNCOMPRESSED_SIZE
               value: "50000000"
             # Don't put the tarfiles in the same place we rsync, as it can
-            # exacerbate disk full errors.
+            # exacerbate disk full errors on the persistent volume.  The
+            # tarfiles are small (see above) and any failure in tarfile
+            # creation causes a crash, which causes a container restart, which
+            # restarts everything with a clean FS (except for the persistent
+            # volume).
             - name: TARFILE_DIRECTORY
               value: "/tmp"
           resources:
