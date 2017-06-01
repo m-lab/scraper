@@ -31,7 +31,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import tempfile
 
 import apiclient
@@ -40,6 +39,20 @@ import retry
 
 from oauth2client.contrib import gce
 import google.cloud.datastore as cloud_datastore
+
+
+# Three kinds of exception, a base and two that contain hints about what can be
+# done next.
+class ScraperException(Exception):
+    """Base class for exceptions in scraper."""
+
+
+class RecoverableScraperException(ScraperException):
+    """Exceptions where it is better to retry than crash."""
+
+
+class NonRecoverableScraperException(ScraperException):
+    """Exceptions where it is better to crash than retry."""
 
 
 # Prometheus histogram buckets are web-response-sized by default, with lots of
@@ -146,8 +159,9 @@ def list_rsync_files(rsync_binary, rsync_url):
             files.append(chunks[4])
         return files
     except subprocess.CalledProcessError as error:
-        logging.error('rsync file listing failed: %s', str(error))
-        sys.exit(1)
+        message = 'rsync file listing failed: %s' % str(error)
+        logging.error(message)
+        raise RecoverableScraperException(message)
 
 
 def remove_older_files(date, files):
@@ -223,8 +237,9 @@ def download_files(rsync_binary, rsync_url, files, destination):
                                 destination])
                     subprocess.check_call(command)
                 except subprocess.CalledProcessError as error:
-                    logging.error('rsync download failed: %s', str(error))
-                    sys.exit(1)
+                    message = 'rsync download failed: %s' % str(error)
+                    logging.error(message)
+                    raise RecoverableScraperException(message)
     logging.info('sync completed successfully from %s', rsync_url)
 
 
@@ -325,10 +340,11 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
       SystemExit if anything fails
     """
     if os.path.exists(tarfile_name):
-        logging.error('The file %s/%s already exists, which is preventing the '
-                      'creation of another file of the same name',
-                      os.getcwd(), tarfile_name)
-        sys.exit(1)
+        logging.warning('The file %s/%s already exists, which will prevent the '
+                        'creation of another file of the same name. We are '
+                        'deleting it.',
+                        os.getcwd(), tarfile_name)
+        os.remove(tarfile_name)
 
     command = [tar_binary, 'cfz', tarfile_name, '--null', '--files-from']
     try:
@@ -338,13 +354,15 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
             command.append(temp.name)
             subprocess.check_call(command)
     except subprocess.CalledProcessError as error:
-        logging.error('tarfile creation ("%s") failed: %s', ' '.join(command),
-                      str(error))
-        sys.exit(1)
+        message = 'tarfile creation ("%s") failed: %s' % (' '.join(command),
+                                                          str(error))
+        logging.error(message)
+        raise NonRecoverableScraperException(message)
     if not os.path.exists(tarfile_name):
-        logging.error('The tarfile %s/%s was not successfully created',
-                      os.getcwd(), tarfile_name)
-        sys.exit(1)
+        message = ('The tarfile %s/%s was not successfully created' %
+                   (os.getcwd(), tarfile_name))
+        logging.error(message)
+        raise NonRecoverableScraperException(message)
 
 
 def node_and_site(host):
@@ -537,8 +555,9 @@ def xdate_to_date_or_die(xdate_text):
         assert year.isdigit() and month.isdigit() and day.isdigit()
         return datetime.date(int(year, 10), int(month, 10), int(day, 10))
     except (AssertionError, ValueError):
-        logging.error('Bad date string: "%s"', xdate_text)
-        sys.exit(1)
+        message = 'Bad date string: "%s"' % xdate_text
+        logging.error(message)
+        raise NonRecoverableScraperException(message)
 
 
 class SyncStatus(object):
@@ -730,15 +749,35 @@ def download(args, rsync_url, sync_status, destination):  # pragma: no cover
     download_files(args.rsync_binary, rsync_url, newer_files, destination)
 
 
-def upload_if_allowed(args, sync_status, destination,
-                      storage_service):  # pragma: no cover
-    """If enough time has passed, upload old data to GCS.
+def upload_if_allowed(args, sync_status, destination, storage_service):
+    """If enough time has passed, upload old data to GCS."""
+    upload_up_to_date(args, sync_status, destination, storage_service,
+                      max_new_archived_date())
+
+
+def upload_stale_disk(args, sync_status, destination, storage_service):
+    """Upload all data from the disk where we also have the next day's data."""
+    days = list(find_all_days_to_upload(destination, max_new_archived_date()))
+    if len(days) <= 1:
+        logging.info('No stale data found')
+        return
+    else:
+        days.pop()  # The last day is not okay
+        last_okay_day = days[-1]
+        logging.warning('Stale data found: %s', str(last_okay_day))
+        upload_up_to_date(args, sync_status, destination, storage_service,
+                          last_okay_day)
+
+
+def upload_up_to_date(args, sync_status, destination,
+                      storage_service,
+                      candidate_last_archived_date):  # pragma: no cover
+    """Tar and upload local data.
 
     Tar up what we have for each unarchived day that is sufficiently in the past
-    (up to and including the new archive date), upload what we have, and delete
-    the local copies of all successfully-uploaded data.
+    (up to and including the candidate_last_archived_date), upload what we have,
+    and delete the local copies of all successfully-uploaded data.
     """
-    candidate_last_archived_date = max_new_archived_date()
     max_mtime = None
     for day in find_all_days_to_upload(destination,
                                        candidate_last_archived_date):

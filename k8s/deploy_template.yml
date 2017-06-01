@@ -59,8 +59,14 @@ spec:
               value: '{{NAMESPACE}}'
             - name: MAX_UNCOMPRESSED_SIZE
               value: "50000000"
+            # Don't put the tarfiles in the same place we rsync, as it can
+            # exacerbate disk full errors on the persistent volume.  The
+            # tarfiles are small (see above) and any failure in tarfile
+            # creation causes a crash, which causes a container restart, which
+            # restarts everything with a clean FS (except for the persistent
+            # volume).
             - name: TARFILE_DIRECTORY
-              value: "/tarfiles"
+              value: "/tmp"
           resources:
             requests:
               memory: "200Mi"
@@ -70,8 +76,6 @@ spec:
               cpu: "30m"
           volumeMounts:
           - mountPath: /scraper_data
-            name: volume-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
-          - mountPath: /tarfiles
             name: volume-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}
         - image: prom/node-exporter:v0.13.0
           name: fs-exporter
