@@ -117,12 +117,16 @@ kubectl apply -f k8s/storage-class.yml
 
 # Define all our claims
 CLAIMSOUT=$(mktemp claims.XXXXXX)
-kubectl apply -f claims/ > ${CLAIMSOUT} || (cat ${CLAIMSOUT} && exit 1)
+(kubectl apply -f claims/ \
+  | tee ${CLAIMSOUT} \
+  | awk 'NR % 100 == 1') || (cat ${CLAIMSOUT} && exit 1)
 echo Applied $(wc -l ${CLAIMSOUT} | awk '{print $1}') claims
 
 # Define all our deployments
 DEPLOYOUT=$(mktemp deployments.XXXXXX)
-kubectl apply -f deployment/ > ${DEPLOYOUT} || (cat ${DEPLOYOUT} && exit 1)
+(kubectl apply -f deployment/ \
+  | ${DEPLOYOUT} \
+  | awk 'NR % 100 == 1') || (cat ${DEPLOYOUT} && exit 1)
 echo Applied $(wc -l ${DEPLOYOUT} | awk '{print $1}') deployments
 
 # Output debug info
