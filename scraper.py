@@ -496,7 +496,7 @@ TARFILE_UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024
 
 
 @TARFILE_UPLOAD_TIME.time()
-@retry.retry(exceptions=googleapiclient.errors.HttpError,
+@retry.retry(exceptions=RecoverableScraperException,
              backoff=2,      # Exponential backoff with a multiplier of 2
              jitter=(1, 5),  # plus a random number of seconds from 1 to 5
              max_delay=300,  # but never more than 5 minutes.
@@ -524,16 +524,24 @@ def upload_tarfile(service, tgz_filename, date, experiment,
     media = apiclient.http.MediaFileUpload(tgz_filename,
                                            chunksize=TARFILE_UPLOAD_CHUNK_SIZE,
                                            resumable=True)
-    logging.info('Uploading %s to %s/%s', tgz_filename, bucket, name)
-    request = service.objects().insert(
-        bucket=bucket, name=name, media_body=media)
-    response = None
-    while response is None:
-        with TARFILE_CHUNK_UPLOAD_TIME.time():
-            progress, response = request.next_chunk()
-            if progress:
-                logging.debug('Uploaded %d%%', 100.0 * progress.progress())
-    logging.info('Upload to %s/%s complete!', bucket, name)
+    try:
+        logging.info('Uploading %s to %s/%s', tgz_filename, bucket, name)
+        request = service.objects().insert(
+            bucket=bucket, name=name, media_body=media)
+        response = None
+        while response is None:
+            with TARFILE_CHUNK_UPLOAD_TIME.time():
+                progress, response = request.next_chunk()
+                if progress:
+                    logging.debug('Uploaded %d%%', 100.0 * progress.progress())
+        logging.info('Upload to %s/%s complete!', bucket, name)
+    except googleapiclient.errors.HttpError as error:
+        if (error.resp.status // 100) == 5:  # HTTP 500 is recoverable
+            logging.warning('Recoverable error on upload: ' + str(error))
+            raise RecoverableScraperException(str(error))
+        else:
+            logging.warning('Non-recoverable error on upload: ' + str(error))
+            raise NonRecoverableScraperException(str(error))
 
 
 def remove_datafiles(directory, day):
