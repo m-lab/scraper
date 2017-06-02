@@ -94,8 +94,7 @@ TARFILE_UPLOAD_TIME = prometheus_client.Histogram(
     buckets=TIME_BUCKETS)
 TARFILE_CHUNK_UPLOAD_TIME = prometheus_client.Histogram(
     'scraper_tarfile_chunk_upload_time_seconds',
-    'How long it took to upload each tarfile',
-    buckets=TIME_BUCKETS)
+    'How long it took to upload each tarfile chunk')
 # pylint: enable=no-value-for-parameter
 
 
