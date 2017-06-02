@@ -67,8 +67,7 @@ then
   ZONE=us-central1-a
 elif [[ "$1" == staging ]]
 then
-  # These are the machines we deploy staging images to.
-  # no mlab4s until more bugs are worked out
+  # These are the machines we scrape with our staging instance.
   fill_in_templates 'mlab4' 11 claims deployment
   fill_in_templates 'ndt.*mlab4' 110 claims deployment
   cat operator/plsync/canary_machines.txt | (
@@ -117,12 +116,17 @@ kubectl apply -f k8s/storage-class.yml
 
 # Define all our claims
 CLAIMSOUT=$(mktemp claims.XXXXXX)
-kubectl apply -f claims/ > ${CLAIMSOUT} || (cat ${CLAIMSOUT} && exit 1)
+(kubectl apply -f claims/ \
+  | tee ${CLAIMSOUT} \
+  | awk 'NR % 100 == 1 {print "Claim", NR, $0}') || (cat ${CLAIMSOUT}; exit 1)
 echo Applied $(wc -l ${CLAIMSOUT} | awk '{print $1}') claims
 
 # Define all our deployments
 DEPLOYOUT=$(mktemp deployments.XXXXXX)
-kubectl apply -f deployment/ > ${DEPLOYOUT} || (cat ${DEPLOYOUT} && exit 1)
+(kubectl apply -f deployment/ \
+  | tee ${DEPLOYOUT} \
+  | awk 'NR % 100 == 1 {print "Deployment", NR, $0}') || (cat ${DEPLOYOUT};
+                                                          exit 1)
 echo Applied $(wc -l ${DEPLOYOUT} | awk '{print $1}') deployments
 
 # Output debug info
