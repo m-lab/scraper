@@ -133,9 +133,7 @@ def list_rsync_files(rsync_binary, rsync_url):
     Lists all the files we might wish to download from the server. Be
     careful with the filenames this command returns, because they might
     not be safe for shell interpretation. Therefore, make sure that they
-    are never interpreted by a shell. In order to ensure that, we need
-    to have the full authoritative path to the rsync binary, which is the
-    thing we pass in here.  If something goes wrong with the download, exit.
+    are never interpreted by a shell.
 
     Args:
       rsync_binary: the full path location of rsync
@@ -143,6 +141,9 @@ def list_rsync_files(rsync_binary, rsync_url):
 
     Returns:
       a list of filenames
+
+    Raises:
+      RecoverableScraperException when rsync doesn't run successfully
     """
     logging.info('rsync file list discovery from %s', rsync_url)
     command = ([rsync_binary, '--list-only', '--recursive'] + RSYNC_ARGS +

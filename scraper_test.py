@@ -146,12 +146,13 @@ BADBADBAD
 
     @mock.patch.object(subprocess, 'Popen')
     @testfixtures.log_capture()
-    def test_list_rsync_files_throws_on_failure(self, patched_subprocess):
+    def test_list_rsync_files_throws_on_failure(self, patched_subprocess, log):
         mock_process = mock.Mock()
         mock_process.returncode = 1
         patched_subprocess.return_value = mock_process
         with self.assertRaises(scraper.RecoverableScraperException):
             _ = scraper.list_rsync_files('/usr/bin/rsync', 'localhost')
+        self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
     def test_list_rsync_files_fails(self, log):
