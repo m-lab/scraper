@@ -122,8 +122,9 @@ def assert_mlab_hostname(hostname):
     return hostname
 
 
-# Use IPv4, compression, and limit total bandwidth usage to 10 Mbps
-RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000']
+# Use IPv4, compression, limit total bandwidth usage to 10 Mbps, and don't
+# crash when ephemeral files disappear.
+RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000', '--ignore-missing-args']
 
 
 @RSYNC_LIST_FILES_RUNS.time()
@@ -237,13 +238,11 @@ def download_files(rsync_binary, rsync_url, files, destination):
                     logging.info('Synching %d files (already synched %d/%d)',
                                  len(filenames), start, len(files))
                     # Transfer the file modification times.
-                    # Don't error out if a file gets deleted out from under us
-                    # during a large transfer.
-                    # Filenames in the temp file are null-separated
+                    # Filenames in the temp file are null-separated.
+                    # The filenames to transfer are in a file.
                     command = ([rsync_binary] + RSYNC_ARGS +
-                               ['--times', '--ignore-missing-args', '--from0',
-                                '--files-from', temp.name, rsync_url,
-                                destination])
+                               ['--times', '--from0', '--files-from', temp.name,
+                                rsync_url, destination])
                     subprocess.check_call(command)
                 except subprocess.CalledProcessError as error:
                     message = 'rsync download failed: %s' % str(error)
