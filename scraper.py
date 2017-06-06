@@ -122,9 +122,8 @@ def assert_mlab_hostname(hostname):
     return hostname
 
 
-# Use IPv4, compression, limit total bandwidth usage to 10 Mbps, and don't
-# crash when ephemeral files disappear.
-RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000', '--ignore-missing-args']
+# Use IPv4, compression, limit total bandwidth usage to 10 Mbps.
+RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000']
 
 
 @RSYNC_LIST_FILES_RUNS.time()
@@ -145,28 +144,34 @@ def list_rsync_files(rsync_binary, rsync_url):
     Returns:
       a list of filenames
     """
-    try:
-        logging.info('rsync file list discovery from %s', rsync_url)
-        command = ([rsync_binary, '--list-only', '--recursive'] + RSYNC_ARGS +
-                   [rsync_url])
-        logging.info('Listing files on server with the command: %s',
-                     ' '.join(command))
-        lines = subprocess.check_output(command).splitlines()
-        files = []
-        for line in lines:
-            # None is a special whitespace arg for split
-            chunks = line.split(None, 4)
-            if chunks[0].startswith('d'):
-                continue
-            if len(chunks) != 5:
-                logging.error('Bad line in output: %s', line)
-                continue
-            files.append(chunks[4])
-        return files
-    except subprocess.CalledProcessError as error:
-        message = 'rsync file listing failed: %s' % str(error)
+    logging.info('rsync file list discovery from %s', rsync_url)
+    command = ([rsync_binary, '--list-only', '--recursive'] + RSYNC_ARGS +
+               [rsync_url])
+    logging.info('Listing files on server with the command: %s',
+                 ' '.join(command))
+    process = subprocess.Popen(command, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+    # The read() call blocks until it reads EOF, which is also when the process
+    # terminates.
+    lines = process.stdout.read().splitlines()
+    # Return code 24 from rsync is "partial transfer because some files
+    # disappeared", which is totally fine with us - ephemeral files disappearing
+    # is no cause for alarm.
+    if process.returncode not in (0, 24):
+        message = 'rsync file listing failed: %s' % str(process.stderr.read())
         logging.error(message)
         raise RecoverableScraperException('rsync_listing', message)
+    files = []
+    for line in lines:
+        # None is a special whitespace arg for split
+        chunks = line.split(None, 4)
+        if chunks[0].startswith('d'):
+            continue
+        if len(chunks) != 5:
+            logging.error('Bad line in output: %s', line)
+            continue
+        files.append(chunks[4])
+    return files
 
 
 def remove_older_files(date, files):
@@ -237,12 +242,14 @@ def download_files(rsync_binary, rsync_url, files, destination):
                 try:
                     logging.info('Synching %d files (already synched %d/%d)',
                                  len(filenames), start, len(files))
+                    # Don't crash when ephemeral files disappear.
                     # Transfer the file modification times.
                     # Filenames in the temp file are null-separated.
                     # The filenames to transfer are in a file.
                     command = ([rsync_binary] + RSYNC_ARGS +
-                               ['--times', '--from0', '--files-from', temp.name,
-                                rsync_url, destination])
+                               ['--ignore-missing-args', '--times', '--from0',
+                                '--files-from', temp.name, rsync_url,
+                                destination])
                     subprocess.check_call(command)
                 except subprocess.CalledProcessError as error:
                     message = 'rsync download failed: %s' % str(error)

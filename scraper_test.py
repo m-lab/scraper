@@ -76,7 +76,7 @@ class TestScraper(unittest.TestCase):
             with testfixtures.OutputCapture() as _:
                 run_scraper.parse_cmdline(['-h'])
 
-    @mock.patch.object(subprocess, 'check_output')
+    @mock.patch.object(subprocess, 'Popen')
     @testfixtures.log_capture()
     def test_list_rsync_files(self, patched_subprocess, log):
         # pylint: disable=line-too-long
@@ -93,7 +93,10 @@ BADBADBAD
 -rw-r--r--            716 2016/01/06 18:07:37 2016/01/06/20160106T18:07:33.122784000Z_:0.meta
 -rw-r--r--            103 2016/01/06 22:32:01 2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz"""
         # pylint: enable=line-too-long
-        patched_subprocess.return_value = serverfiles
+        mock_process = mock.Mock()
+        mock_process.returncode = 0
+        patched_subprocess.return_value = mock_process
+        mock_process.stdout.read.return_value = serverfiles
         files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost')
         self.assertEqual([
             '2016/01/06/.gz',
@@ -106,6 +109,49 @@ BADBADBAD
         self.assertIn('ERROR', [x.levelname for x in log.records])
         self.assertTrue(any(any('BADBADBAD' in arg for arg in record.args)
                             for record in log.records))
+
+    @mock.patch.object(subprocess, 'Popen')
+    @testfixtures.log_capture()
+    def test_list_rsync_files_returns_24(self, patched_subprocess, log):
+        # pylint: disable=line-too-long
+        serverfiles = """\
+drwxr-xr-x          4,096 2016/01/06 05:43:33 .
+drwxr-xr-x          4,096 2016/10/01 00:06:59 2016
+drwxr-xr-x          4,096 2016/01/15 01:03:29 2016/01
+drwxr-xr-x          4,096 2016/01/06 22:32:01 2016/01/06
+-rw-r--r--              0 2016/01/06 22:32:01 2016/01/06/.gz
+-rw-r--r--            103 2016/01/06 05:43:36 2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz
+-rw-r--r--            716 2016/01/06 05:43:36 2016/01/06/20160106T05:43:32.741066000Z_:0.meta
+-rw-r--r--            101 2016/01/06 18:07:37 2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz
+BADBADBAD
+-rw-r--r--            716 2016/01/06 18:07:37 2016/01/06/20160106T18:07:33.122784000Z_:0.meta
+-rw-r--r--            103 2016/01/06 22:32:01 2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz"""
+        # pylint: enable=line-too-long
+        mock_process = mock.Mock()
+        mock_process.returncode = 24
+        patched_subprocess.return_value = mock_process
+        mock_process.stdout.read.return_value = serverfiles
+        files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost')
+        self.assertEqual([
+            '2016/01/06/.gz',
+            '2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz',
+            '2016/01/06/20160106T05:43:32.741066000Z_:0.meta',
+            '2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz',
+            '2016/01/06/20160106T18:07:33.122784000Z_:0.meta',
+            '2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz'
+        ], files)
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+        self.assertTrue(any(any('BADBADBAD' in arg for arg in record.args)
+                            for record in log.records))
+
+    @mock.patch.object(subprocess, 'Popen')
+    @testfixtures.log_capture()
+    def test_list_rsync_files_throws_on_failure(self, patched_subprocess):
+        mock_process = mock.Mock()
+        mock_process.returncode = 1
+        patched_subprocess.return_value = mock_process
+        with self.assertRaises(scraper.RecoverableScraperException):
+            _ = scraper.list_rsync_files('/usr/bin/rsync', 'localhost')
 
     @testfixtures.log_capture()
     def test_list_rsync_files_fails(self, log):
