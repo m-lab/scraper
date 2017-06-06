@@ -187,7 +187,7 @@ def main(argv):  # pragma: no cover
             SCRAPER_SUCCESS.labels(message='success').inc()
         except scraper.RecoverableScraperException as error:
             logging.error('Scrape and upload failed: %s', error.message)
-            SCRAPER_SUCCESS.labels(message=str(error.message)).inc()
+            SCRAPER_SUCCESS.labels(message=str(error.prometheus_label)).inc()
         # In order to prevent a thundering herd of rsync jobs, we spread the
         # jobs around in a memoryless way.  By choosing our inter-job sleep
         # time from an exponential distribution, we ensure that the resulting

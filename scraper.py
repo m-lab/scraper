@@ -47,6 +47,10 @@ import google.cloud.datastore as cloud_datastore
 class ScraperException(Exception):
     """Base class for exceptions in scraper."""
 
+    def __init__(self, prometheus_label, message):
+        super(ScraperException, self).__init__(message)
+        self.prometheus_label = prometheus_label
+
 
 class RecoverableScraperException(ScraperException):
     """Exceptions where it is better to retry than crash."""
@@ -119,7 +123,7 @@ def assert_mlab_hostname(hostname):
 
 
 # Use IPv4, compression, and limit total bandwidth usage to 10 Mbps
-RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000', '--times']
+RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000']
 
 
 @RSYNC_LIST_FILES_RUNS.time()
@@ -161,7 +165,7 @@ def list_rsync_files(rsync_binary, rsync_url):
     except subprocess.CalledProcessError as error:
         message = 'rsync file listing failed: %s' % str(error)
         logging.error(message)
-        raise RecoverableScraperException(message)
+        raise RecoverableScraperException('rsync_listing', message)
 
 
 def remove_older_files(date, files):
@@ -232,14 +236,19 @@ def download_files(rsync_binary, rsync_url, files, destination):
                 try:
                     logging.info('Synching %d files (already synched %d/%d)',
                                  len(filenames), start, len(files))
+                    # Transfer the file modification times.
+                    # Don't error out if a file gets deleted out from under us
+                    # during a large transfer.
+                    # Filenames in the temp file are null-separated
                     command = ([rsync_binary] + RSYNC_ARGS +
-                               ['--from0', '--files-from', temp.name, rsync_url,
+                               ['--times', '--ignore-missing-args', '--from0',
+                                '--files-from', temp.name, rsync_url,
                                 destination])
                     subprocess.check_call(command)
                 except subprocess.CalledProcessError as error:
                     message = 'rsync download failed: %s' % str(error)
                     logging.error(message)
-                    raise RecoverableScraperException(message)
+                    raise RecoverableScraperException('rsync_download', message)
     logging.info('sync completed successfully from %s', rsync_url)
 
 
@@ -357,12 +366,12 @@ def create_tarfile(tar_binary, tarfile_name, component_files):
         message = 'tarfile creation ("%s") failed: %s' % (' '.join(command),
                                                           str(error))
         logging.error(message)
-        raise NonRecoverableScraperException(message)
+        raise NonRecoverableScraperException('tar_error', message)
     if not os.path.exists(tarfile_name):
         message = ('The tarfile %s/%s was not successfully created' %
                    (os.getcwd(), tarfile_name))
         logging.error(message)
-        raise NonRecoverableScraperException(message)
+        raise NonRecoverableScraperException('no_tar_file', message)
 
 
 def node_and_site(host):
@@ -537,10 +546,10 @@ def upload_tarfile(service, tgz_filename, date, experiment,
     except googleapiclient.errors.HttpError as error:
         if (error.resp.status // 100) == 5:  # HTTP 500 is recoverable
             logging.warning('Recoverable error on upload: ' + str(error))
-            raise RecoverableScraperException(str(error))
+            raise RecoverableScraperException('upload', str(error))
         else:
             logging.warning('Non-recoverable error on upload: ' + str(error))
-            raise NonRecoverableScraperException(str(error))
+            raise NonRecoverableScraperException('upload', str(error))
 
 
 def remove_datafiles(directory, day):
@@ -571,7 +580,7 @@ def xdate_to_date_or_die(xdate_text):
     except (AssertionError, ValueError):
         message = 'Bad date string: "%s"' % xdate_text
         logging.error(message)
-        raise NonRecoverableScraperException(message)
+        raise NonRecoverableScraperException('bad_date', message)
 
 
 class SyncStatus(object):
