@@ -152,6 +152,7 @@ def list_rsync_files(rsync_binary, rsync_url):
                  ' '.join(command))
     process = subprocess.Popen(command, stdout=subprocess.PIPE,
                                stderr=subprocess.PIPE)
+    process.wait()
     # The read() call blocks until it reads EOF, which is also when the process
     # terminates.
     lines = process.stdout.read().splitlines()
@@ -159,7 +160,8 @@ def list_rsync_files(rsync_binary, rsync_url):
     # disappeared", which is totally fine with us - ephemeral files disappearing
     # is no cause for alarm.
     if process.returncode not in (0, 24):
-        message = 'rsync file listing failed: %s' % str(process.stderr.read())
+        message = 'rsync file listing failed (%d): %s' % (process.returncode,
+                                                          process.stderr.read())
         logging.error(message)
         raise RecoverableScraperException('rsync_listing', message)
     files = []
