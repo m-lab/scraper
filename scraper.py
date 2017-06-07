@@ -277,19 +277,17 @@ def download_files(rsync_binary, rsync_url, files, destination):
                 temp.write('\0'.join(filenames))
                 temp.flush()
                 # Download all the files.
-                try:
-                    logging.info('Synching %d files (already synched %d/%d)',
-                                 len(filenames), start, len(files))
-                    # Don't crash when ephemeral files disappear.
-                    # Filenames in the temp file are null-separated.
-                    # The filenames to transfer are in a file.
-                    command = ([rsync_binary] + RSYNC_ARGS +
-                               ['--ignore-missing-args', '--from0',
-                                '--files-from', temp.name, rsync_url,
-                                destination])
-                    subprocess.check_call(command)
-                except subprocess.CalledProcessError as error:
-                    message = 'rsync download failed: %s' % str(error)
+                logging.info('Synching %d files (already synched %d/%d)',
+                             len(filenames), start, len(files))
+                # Don't crash when ephemeral files disappear.
+                # Filenames in the temp file are null-separated.
+                # The filenames to transfer are in a file.
+                command = ([rsync_binary] + RSYNC_ARGS +
+                           ['--from0', '--files-from', temp.name, rsync_url,
+                            destination])
+                error_code = subprocess.call(command)
+                if error_code not in (0, 24):
+                    message = 'rsync download failed exit code: %d' % error_code
                     logging.error(message)
                     raise RecoverableScraperException('rsync_download', message)
     logging.info('sync completed successfully from %s', rsync_url)

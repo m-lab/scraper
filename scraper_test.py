@@ -263,8 +263,8 @@ class TestScraper(unittest.TestCase):
                                '/tmp')
         patched_check_call.assert_called_once()
 
-    @mock.patch.object(subprocess, 'check_call')
-    def test_download_files_breaks_up_long_file_list(self, patched_check_call):
+    @mock.patch.object(subprocess, 'call')
+    def test_download_files_breaks_up_long_file_list(self, patched_call):
         files_to_download = ['2016/10/26/DNE.%d' % i for i in range(100070)]
         files_downloaded = []
 
@@ -278,12 +278,13 @@ class TestScraper(unittest.TestCase):
             self.assertTrue(len(files) > 0)
             self.assertTrue(len(files) <= 1000)
             files_downloaded.extend(files)
+            return 0
 
-        patched_check_call.side_effect = verify_contents
+        patched_call.side_effect = verify_contents
         scraper.download_files('/bin/true', 'localhost/', files_to_download,
                                '/tmp')
         self.assertEqual(set(files_to_download), set(files_downloaded))
-        self.assertEqual(patched_check_call.call_count, 101)
+        self.assertEqual(patched_call.call_count, 101)
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     def test_new_archived_date_after_8am(self):
