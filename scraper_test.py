@@ -24,6 +24,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 import freezegun
@@ -76,62 +77,88 @@ class TestScraper(unittest.TestCase):
             with testfixtures.OutputCapture() as _:
                 run_scraper.parse_cmdline(['-h'])
 
-    @mock.patch.object(subprocess, 'Popen')
     @testfixtures.log_capture()
-    def test_list_rsync_files(self, patched_subprocess, log):
+    def test_list_rsync_files(self):
         # pylint: disable=line-too-long
-        serverfiles = """\
-drwxr-xr-x          4,096 2016/01/06 05:43:33 .
-drwxr-xr-x          4,096 2016/10/01 00:06:59 2016
-drwxr-xr-x          4,096 2016/01/15 01:03:29 2016/01
-drwxr-xr-x          4,096 2016/01/06 22:32:01 2016/01/06
--rw-r--r--              0 2016/01/06 22:32:01 2016/01/06/.gz
--rw-r--r--            103 2016/01/06 05:43:36 2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz
--rw-r--r--            716 2016/01/06 05:43:36 2016/01/06/20160106T05:43:32.741066000Z_:0.meta
--rw-r--r--            101 2016/01/06 18:07:37 2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz
-BADBADBAD
--rw-r--r--            716 2016/01/06 18:07:37 2016/01/06/20160106T18:07:33.122784000Z_:0.meta
--rw-r--r--            103 2016/01/06 22:32:01 2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz"""
+        serverfiles = textwrap.dedent("""\
+            opening tcp connection to ndt.iupui.mlab2.lba01.measurement-lab.org port 7999
+            sending daemon args: --server --sender -vvnlogDtprze.iLsfx --timeout=300 --bwlimit=10000 . ndt/  (7 args)
+            receiving incremental file list
+            delta-transmission enabled
+            [receiver] expand file_list pointer array to 524288 bytes, did move
+            [generator] expand file_list pointer array to 524288 bytes, did move
+            [receiver] expand file_list pointer array to 2097152 bytes, did move
+            [generator] expand file_list pointer array to 2097152 bytes, did move
+            ./
+            2017/05/
+            2017/06/
+            2017/06/01/
+            2017/06/02/
+            2017/06/03/
+            2017/06/03/.gz
+            2017/06/03/20170603T23:59:47.143624000Z_86.164.175.237.s2c_ndttrace.gz
+            2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50280.cputime.gz
+            2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50280.meta
+            2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50281.s2c_snaplog.gz
+            2017/06/03/20170603T23:59:52.739997000Z_143.159.127.54.s2c_ndttrace.gz
+            2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233.c2s_ndttrace
+            [receiver] expand file_list pointer array to 1048576 bytes, did move
+            [generator] expand file_list pointer array to 1048576 bytes, did move
+            2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:49151.cputime
+            2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:54633.c2s_snaplog
+            2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146.s2c_ndttrace.gz
+            BADLINE
+            2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.cputime.gz
+            2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.meta
+            2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50902.s2c_snaplog.gz""")
+        with tempfile.NamedTemporaryFile() as temp:
+            temp.write(serverfiles)
+            temp.flush()
+            fake_process = subprocess.Popen(['/bin/cat', temp.name],
+                                            stdout=subprocess.PIPE)
+            with mock.patch.object(subprocess, 'Popen') as mock_subprocess:
+                mock_subprocess.return_value = fake_process
+                files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost',
+                                                 '/tmp')
+        self.assertEqual(
+            ['2017/06/03/.gz',
+             '2017/06/03/20170603T23:59:47.143624000Z_86.164.175.237.s2c_ndttrace.gz',
+             '2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50280.cputime.gz',
+             '2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50280.meta',
+             '2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50281.s2c_snaplog.gz',
+             '2017/06/03/20170603T23:59:52.739997000Z_143.159.127.54.s2c_ndttrace.gz',
+             '2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233.c2s_ndttrace',
+             '2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:49151.cputime',
+             '2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:54633.c2s_snaplog',
+             '2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146.s2c_ndttrace.gz',
+             '2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.cputime.gz',
+             '2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.meta',
+             '2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50902.s2c_snaplog.gz'],
+            files)
         # pylint: enable=line-too-long
-        mock_process = mock.Mock()
-        mock_process.returncode = 0
-        patched_subprocess.return_value = mock_process
-        mock_process.stdout.read.return_value = serverfiles
-        files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost')
-        self.assertEqual([
-            '2016/01/06/.gz',
-            '2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz',
-            '2016/01/06/20160106T05:43:32.741066000Z_:0.meta',
-            '2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz',
-            '2016/01/06/20160106T18:07:33.122784000Z_:0.meta',
-            '2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz'
-        ], files)
-        self.assertIn('ERROR', [x.levelname for x in log.records])
-        self.assertTrue(any(any('BADBADBAD' in arg for arg in record.args)
-                            for record in log.records))
 
     @mock.patch.object(subprocess, 'Popen')
     @testfixtures.log_capture()
-    def test_list_rsync_files_returns_24(self, patched_subprocess, log):
+    def test_list_rsync_files_returns_24(self, patched_subprocess):
         # pylint: disable=line-too-long
-        serverfiles = """\
-drwxr-xr-x          4,096 2016/01/06 05:43:33 .
-drwxr-xr-x          4,096 2016/10/01 00:06:59 2016
-drwxr-xr-x          4,096 2016/01/15 01:03:29 2016/01
-drwxr-xr-x          4,096 2016/01/06 22:32:01 2016/01/06
--rw-r--r--              0 2016/01/06 22:32:01 2016/01/06/.gz
--rw-r--r--            103 2016/01/06 05:43:36 2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz
--rw-r--r--            716 2016/01/06 05:43:36 2016/01/06/20160106T05:43:32.741066000Z_:0.meta
--rw-r--r--            101 2016/01/06 18:07:37 2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz
-BADBADBAD
--rw-r--r--            716 2016/01/06 18:07:37 2016/01/06/20160106T18:07:33.122784000Z_:0.meta
--rw-r--r--            103 2016/01/06 22:32:01 2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz"""
+        serverfiles = textwrap.dedent("""\
+            .
+            2016/
+            2016/01/
+            2016/01/06/
+            2016/01/06/.gz
+            2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz
+            2016/01/06/20160106T05:43:32.741066000Z_:0.meta
+            2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz
+            BADBADBAD
+            2016/01/06/20160106T18:07:33.122784000Z_:0.meta
+            2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz""")
         # pylint: enable=line-too-long
         mock_process = mock.Mock()
         mock_process.returncode = 24
         patched_subprocess.return_value = mock_process
-        mock_process.stdout.read.return_value = serverfiles
-        files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost')
+        mock_process.stdout = serverfiles.splitlines()
+        files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost', '')
         self.assertEqual([
             '2016/01/06/.gz',
             '2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz',
@@ -140,24 +167,22 @@ BADBADBAD
             '2016/01/06/20160106T18:07:33.122784000Z_:0.meta',
             '2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz'
         ], files)
-        self.assertIn('ERROR', [x.levelname for x in log.records])
-        self.assertTrue(any(any('BADBADBAD' in arg for arg in record.args)
-                            for record in log.records))
 
     @mock.patch.object(subprocess, 'Popen')
     @testfixtures.log_capture()
     def test_list_rsync_files_throws_on_failure(self, patched_subprocess, log):
         mock_process = mock.Mock()
         mock_process.returncode = 1
+        mock_process.stdout = []
         patched_subprocess.return_value = mock_process
         with self.assertRaises(scraper.RecoverableScraperException):
-            _ = scraper.list_rsync_files('/usr/bin/rsync', 'localhost')
+            _ = scraper.list_rsync_files('/usr/bin/rsync', 'localhost', '')
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
     def test_list_rsync_files_fails(self, log):
         with self.assertRaises(scraper.RecoverableScraperException):
-            scraper.list_rsync_files('/bin/false', 'localhost')
+            scraper.list_rsync_files('/bin/false', 'localhost', '')
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
