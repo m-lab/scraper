@@ -140,7 +140,6 @@ class TestScraper(unittest.TestCase):
     @mock.patch.object(subprocess, 'Popen')
     @testfixtures.log_capture()
     def test_list_rsync_files_returns_24(self, patched_subprocess):
-        # pylint: disable=line-too-long
         serverfiles = textwrap.dedent("""\
             .
             2016/
@@ -153,7 +152,6 @@ class TestScraper(unittest.TestCase):
             BADBADBAD
             2016/01/06/20160106T18:07:33.122784000Z_:0.meta
             2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz""")
-        # pylint: enable=line-too-long
         mock_process = mock.Mock()
         mock_process.returncode = 24
         patched_subprocess.return_value = mock_process
