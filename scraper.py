@@ -177,7 +177,7 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     #  2017/06/01/
     #  2017/06/02/
     #  2017/06/03/
-    #  2017/06/03/.gz
+    #  2017/06/03/.gz is uptodate
     #  2017/06/03/20170603T23:59:47.143624000Z_86.164.175.237.s2c_ndttrace.gz
     #  2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.meta
     # [snip]
@@ -191,10 +191,12 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     files = []
     # Only download things that are files and that respect the date-based
     # directory structure.
-    files_regex = re.compile(r'^\d{4}/\d\d/\d\d/.*[^/]$')
+    files_regex = re.compile(r'^(\d{4}/\d\d/\d\d/.*[^/])( is uptodate)?$')
     for line in process.stdout:
         line = line.strip()
         if files_regex.match(line):
+            if line.endswith(' is uptodate'):
+                line = line[:-len(' is uptodate')]
             files.append(line)
         if len(files) % 1000 == 0:
             logging.info('Found %d files to download so far', len(files))

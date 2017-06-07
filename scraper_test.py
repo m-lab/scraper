@@ -101,7 +101,7 @@ class TestScraper(unittest.TestCase):
             2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50280.meta
             2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50281.s2c_snaplog.gz
             2017/06/03/20170603T23:59:52.739997000Z_143.159.127.54.s2c_ndttrace.gz
-            2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233.c2s_ndttrace
+            2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233.c2s_ndttrace is uptodate
             [receiver] expand file_list pointer array to 1048576 bytes, did move
             [generator] expand file_list pointer array to 1048576 bytes, did move
             2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:49151.cputime
