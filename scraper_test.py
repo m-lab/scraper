@@ -245,8 +245,8 @@ class TestScraper(unittest.TestCase):
         # If the next line doesn't raise SystemExit then the test passes
         scraper.download_files('/bin/false', 'localhost/', [], '/tmp')
 
-    @mock.patch.object(subprocess, 'check_call')
-    def test_download_files(self, patched_check_call):
+    @mock.patch.object(subprocess, 'call')
+    def test_download_files(self, patched_call):
         files_to_download = ['2016/10/26/DNE1', '2016/10/26/DNE2']
 
         def verify_contents(args):
@@ -257,11 +257,13 @@ class TestScraper(unittest.TestCase):
             file_with_filenames = args[-3]
             files_downloaded = file(file_with_filenames).read().split('\0')
             self.assertEqual(files_to_download, files_downloaded)
+            return 0
 
-        patched_check_call.side_effect = verify_contents
+        patched_call.side_effect = verify_contents
+        self.assertEqual(patched_call.call_count, 0)
         scraper.download_files('/bin/true', 'localhost/', files_to_download,
                                '/tmp')
-        patched_check_call.assert_called_once()
+        self.assertEqual(patched_call.call_count, 1)
 
     @mock.patch.object(subprocess, 'call')
     def test_download_files_breaks_up_long_file_list(self, patched_call):
@@ -351,8 +353,8 @@ class TestScraper(unittest.TestCase):
         client.key.return_value = {}
         status = scraper.SyncStatus(client, None)
         status.get_data()
-        client.key.assert_called_once()
-        client.get.assert_called_once()
+        self.assertEqual(client.key.call_count, 1)
+        self.assertEqual(client.get.call_count, 1)
         status.get_data()
         self.assertEqual(client.key.call_count, 1)
         self.assertEqual(client.get.call_count, 2)
@@ -419,7 +421,7 @@ class TestScraper(unittest.TestCase):
     def test_update_last_archived_date(self, patched_update):
         status = scraper.SyncStatus(None, None)
         status.update_last_archived_date(datetime.date(2012, 2, 29))
-        patched_update.assert_called_once()
+        self.assertEqual(patched_update.call_count, 1)
         self.assertTrue(u'x2012-02-29' in patched_update.call_args[0])
         index = patched_update.call_args[0].index(u'x2012-02-29')
         self.assertEqual(type(patched_update.call_args[0][index]), unicode)
@@ -429,7 +431,7 @@ class TestScraper(unittest.TestCase):
         client.get.return_value = None
         status = scraper.SyncStatus(client, None)
         status.update_data('key', 'value')
-        client.put.assert_called_once()
+        self.assertEqual(client.put.call_count, 1)
 
     @testfixtures.log_capture()
     def test_update_data_robustness(self, _log):
@@ -475,7 +477,7 @@ class TestScraper(unittest.TestCase):
     def test_update_debug_msg_too_large(self, patched_update_data):
         status = scraper.SyncStatus(None, None)
         status.update_debug_message('m' * 1600)
-        patched_update_data.assert_called_once()
+        self.assertEqual(patched_update_data.call_count, 1)
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
         self.assertTrue(len(patched_update_data.call_args[0][1]) < 1500)
@@ -506,9 +508,9 @@ class TestScraper(unittest.TestCase):
         logger.setLevel(logging.ERROR)
         logger.addHandler(loghandler)
         logger.info('INFORMATIVE')
-        patched_update_data.assert_not_called()
+        self.assertEqual(patched_update_data.call_count, 0)
         logger.error('BADNESS')
-        patched_update_data.assert_called_once()
+        self.assertEqual(patched_update_data.call_count, 1)
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
 
@@ -731,14 +733,14 @@ class TestScraperInTempDir(unittest.TestCase):
     @mock.patch.object(scraper, 'upload_up_to_date')
     def test_initial_upload_empty_disk(self, new_upload):
         scraper.upload_stale_disk({}, None, '.', None)
-        new_upload.assert_not_called()
+        self.assertEqual(new_upload.call_count, 0)
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     @mock.patch.object(scraper, 'upload_up_to_date')
     def test_initial_upload_no_safe_dirs(self, new_upload):
         os.makedirs('2016/01/28')
         scraper.upload_stale_disk({}, None, '.', None)
-        new_upload.assert_not_called()
+        self.assertEqual(new_upload.call_count, 0)
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     @mock.patch.object(scraper, 'upload_up_to_date')
