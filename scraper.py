@@ -311,11 +311,18 @@ def download_files(rsync_binary, rsync_url, files, destination):
                 # Run rsync.
                 # Use all the default arguments.
                 # Don't crash when ephemeral files disappear.
-                # Filenames in the temp file are null-separated.
-                # The filenames to transfer are in a file.
-                command = ([rsync_binary] + RSYNC_ARGS +
-                           ['--ignore-missing-args', '--from0', '--files-from',
-                            temp.name, rsync_url, destination])
+                # Filename patterns in the temp file are null-separated.
+                # The filename patterns to transfer are in a file.
+                #
+                # We use filename patterns instead of filenames in an effort to
+                # work around the fact that the mlab servers don't currently
+                # support --ignore-missing-args. Once the servers have been
+                # upgraded, the --include-from should become --files-from and we
+                # should add the flag --ignore-missing-args.
+                command = ([rsync_binary] + RSYNC_ARGS + ['--from0',
+                                                          '--include-from',
+                                                          temp.name, rsync_url,
+                                                          destination])
                 error_code = subprocess.call(command)
                 if error_code not in (0, 24):
                     message = 'rsync download failed exit code: %d' % error_code
