@@ -501,8 +501,8 @@ class TestScraper(unittest.TestCase):
     def test_update_debug_msg(self, patched_update_data):
         status = scraper.SyncStatus(None, None)
         status.update_debug_message('msg')
-        patched_update_data.assert_called_once_with(
-            'errorsincelastsuccessful', 'msg')
+        self.assertEqual(patched_update_data.call_args,
+                         [('errorsincelastsuccessful', 'msg')])
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
 
@@ -520,8 +520,8 @@ class TestScraper(unittest.TestCase):
     def test_update_last_collection(self, patched_update_data):
         status = scraper.SyncStatus(None, None)
         status.update_last_collection()
-        patched_update_data.assert_called_once_with('lastcollectionattempt',
-                                                    'x2016-01-28-07:43')
+        self.assertEqual(patched_update_data.call_args,
+                         [('lastcollectionattempt', 'x2016-01-28-07:43')])
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
 
@@ -529,8 +529,8 @@ class TestScraper(unittest.TestCase):
     def test_update_mtime(self, patched_update_data):
         status = scraper.SyncStatus(None, None)
         status.update_mtime(7)
-        patched_update_data.assert_called_once_with(
-            'maxrawfilemtimearchived', 7)
+        self.assertEqual(patched_update_data.call_args,
+                         [('maxrawfilemtimearchived', 7)])
 
     @mock.patch.object(scraper.SyncStatus, 'update_data')
     @testfixtures.log_capture()
