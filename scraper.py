@@ -296,7 +296,9 @@ def download_files(rsync_binary, rsync_url, files, destination):
     if len(files) == 0:
         logging.info('No files to be downloaded from %s', rsync_url)
         return
-    # Rsync all the files passed in
+    # Rsync all the files passed in.  Do this piecewise, because rsync allocates
+    # a per-file chunk of memory, so long file lists end up causing huge memory
+    # usage.
     for start in range(0, len(files), FILES_PER_RSYNC_DOWNLOAD):
         with RSYNC_FILE_CHUNK_DOWNLOADS.time():
             filenames = files[start:start + FILES_PER_RSYNC_DOWNLOAD]
@@ -311,16 +313,10 @@ def download_files(rsync_binary, rsync_url, files, destination):
                 # Run rsync.
                 # Use all the default arguments.
                 # Don't crash when ephemeral files disappear.
-                # Filename patterns in the temp file are null-separated.
-                # The filename patterns to transfer are in a file.
-                #
-                # We use filename patterns instead of filenames in an effort to
-                # work around the fact that the mlab servers don't currently
-                # support --ignore-missing-args. Once the servers have been
-                # upgraded, the --include-from should become --files-from and we
-                # should add the flag --ignore-missing-args.
+                # Filenames in the temp file are null-separated.
+                # The filenames to transfer are in a file.
                 command = ([rsync_binary] + RSYNC_ARGS + ['--from0',
-                                                          '--include-from',
+                                                          '--files-from',
                                                           temp.name, rsync_url,
                                                           destination])
                 error_code = subprocess.call(command)
@@ -838,6 +834,38 @@ def init(args):  # pragma: no cover
     return (rsync_url, status, destination, storage_service)
 
 
+def remove_too_recent_files(filelist):
+    """Removes all files which have a too-recent timestamp in their filename.
+
+    For NDT in particular, files with very recent timestamps may be files in the
+    process of being created.  Some of the files that NDT creates, it
+    subsequently gzips and deletes the originals.  Disappearing files causes
+    rsync to freak out, so let's sidestep the problem by ensuring that if there
+    is a timestamp in the filename, then the file will be ignored until the
+    timestamp is sufficiently far in the past that we can be relatively
+    confident that the file won't disappear on us.
+
+    Note that this algorithm does a classically bad thing: it depends on clocks
+    in a distributed system.  However, depending on clocks with a 15-minute
+    granularity feels lower-risk than the classic problems that drove Lamport to
+    create vector clocks.
+    """
+    not_too_recent = []
+    border = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
+    for name in filelist:
+        timestamp = timestamp_from_filename(name)
+        if timestamp is None:
+            # When we can't determine the time, append the file.
+            not_too_recent.append(name)
+        elif timestamp < border:
+            # If the file is not too new, append the file
+            not_too_recent.append(name)
+        else:
+            # There is a timestamp, but the file is too new.
+            logging.debug('%s is too recent a file to download', name)
+    return not_too_recent
+
+
 def download(args, rsync_url, sync_status, destination):  # pragma: no cover
     """Rsync download all files that are new enough.
 
@@ -849,7 +877,8 @@ def download(args, rsync_url, sync_status, destination):  # pragma: no cover
     all_remote_files = list_rsync_files(args.rsync_binary, rsync_url,
                                         destination)
     newer_files = remove_older_files(last_archived_date, all_remote_files)
-    download_files(args.rsync_binary, rsync_url, newer_files, destination)
+    stable_files = remove_too_recent_files(newer_files)
+    download_files(args.rsync_binary, rsync_url, stable_files, destination)
 
 
 def upload_if_allowed(args, sync_status, destination, storage_service):

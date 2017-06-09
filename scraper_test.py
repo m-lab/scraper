@@ -238,6 +238,33 @@ class TestScraper(unittest.TestCase):
                             for record in log.records))
         # pylint: enable=line-too-long
 
+    @freezegun.freeze_time('2016-10-26 18:10:00 UTC')
+    @testfixtures.log_capture()
+    def test_remove_too_recent_files(self):
+        # pylint: disable=line-too-long
+        files = [
+            '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:35192.s2c_snaplog.gz',
+            '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:39482.c2s_snaplog.gz',
+            '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.cputime.gz',
+            '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.meta',
+            '2016/10/26/no_time_stamp.txt',
+            '2016/10/26/20161026T18:02:59.898385000Z_45.56.98.222.c2s_ndttrace.gz',
+            '2016/10/26/20161026T18:02:59.898385000Z_45.56.98.222.s2c_ndttrace.gz',
+            '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.cputime.gz',
+            '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.meta',
+            '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:50264.s2c_snaplog.gz',
+            '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:52410.c2s_snaplog.gz'
+        ]
+        filtered = scraper.remove_too_recent_files(files)
+        self.assertItemsEqual(
+            filtered,
+            ['2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:35192.s2c_snaplog.gz',
+             '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:39482.c2s_snaplog.gz',
+             '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.cputime.gz',
+             '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.meta',
+             '2016/10/26/no_time_stamp.txt'])
+        # pylint: enable=line-too-long
+
     @testfixtures.log_capture()
     def test_download_files_fails_and_dies(self, log):
         with self.assertRaises(scraper.RecoverableScraperException):
