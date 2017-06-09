@@ -207,7 +207,12 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     # Only download things that are files and that respect the date-based
     # directory structure.
     files_regex = re.compile(r'^\d{4}/\d\d/\d\d/.*[^/]$')
+    line_count = 0
     for line in process.stdout:
+        # Count output lines independently from files found.
+        line_count += 1
+        if has_one_bit_set_or_is_zero(line_count):
+            logging.info('%d lines of rsync output read')
         # Get rid of the trailing newline.
         line = line.strip()
         # Don't re-sync files that are already in sync.
