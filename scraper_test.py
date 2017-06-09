@@ -45,6 +45,13 @@ class TestScraper(unittest.TestCase):
         # the test runner, log messages on stdout/stderr are spam.
         logging.getLogger().setLevel(logging.WARNING)
 
+    def test_one_bit(self):
+        for i in range(100):
+            if i in (0, 1, 2, 4, 8, 16, 32, 64):
+                self.assertTrue(scraper.has_one_bit_set_or_is_zero(i), i)
+            else:
+                self.assertFalse(scraper.has_one_bit_set_or_is_zero(i), i)
+
     def test_args(self):
         rsync_host = 'mlab1.dne0t.measurement-lab.org'
         rsync_module = 'ndt'
@@ -127,7 +134,6 @@ class TestScraper(unittest.TestCase):
              '2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50280.meta',
              '2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50281.s2c_snaplog.gz',
              '2017/06/03/20170603T23:59:52.739997000Z_143.159.127.54.s2c_ndttrace.gz',
-             '2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233.c2s_ndttrace',
              '2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:49151.cputime',
              '2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:54633.c2s_snaplog',
              '2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146.s2c_ndttrace.gz',

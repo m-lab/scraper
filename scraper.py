@@ -122,10 +122,19 @@ def assert_mlab_hostname(hostname):
     return hostname
 
 
-# Use IPv4, compression, limit total bandwidth usage to 10 Mbps, don't wait
-# too long before bailing out, and make sure to chmod the files to have sensible
-# permissions.
-RSYNC_ARGS = ['-4', '-avvz', '--bwlimit=10000', '--timeout=300',
+def has_one_bit_set_or_is_zero(i):
+    """Returns true if the number has one bit set or is zero.
+
+    Adapted from https://goo.gl/mGdFkS but could also be from "Hacker's
+    Delight".
+    """
+    return (i & (i - 1)) == 0
+
+
+# Use IPv4, archive mode, compression, limit total bandwidth usage to 10 Mbps,
+# don't wait too long before bailing out, and make sure to chmod the files to
+# have sensible permissions.
+RSYNC_ARGS = ['-4', '-az', '--bwlimit=10000', '--timeout=300',
               '--contimeout=300', '--chmod=u=rwX']
 
 
@@ -141,6 +150,7 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     Args:
       rsync_binary: the full path location of rsync
       rsync_url: the rsync:// url to download the list from
+      destination: the directory to download to
 
     Returns:
       a list of filenames
@@ -183,7 +193,12 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     # [snip]
     # The lines with [generator] and [receiver] may happen at any point in the
     # output.
-    command = ([rsync_binary, '-n'] + RSYNC_ARGS + [rsync_url, destination])
+
+    # -n causes the whole thing to run in dry-run mode
+    # -vv causes the debug output which we parse
+    command = ([rsync_binary, '-n', '-vv'] +
+               RSYNC_ARGS +
+               [rsync_url, destination])
     logging.info('Listing files on server with the command: %s',
                  ' '.join(command))
     process = subprocess.Popen(command, stdout=subprocess.PIPE,
@@ -191,16 +206,20 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     files = []
     # Only download things that are files and that respect the date-based
     # directory structure.
-    files_regex = re.compile(r'^(\d{4}/\d\d/\d\d/.*[^/])( is uptodate)?$')
+    files_regex = re.compile(r'^\d{4}/\d\d/\d\d/.*[^/]$')
     for line in process.stdout:
+        # Get rid of the trailing newline.
         line = line.strip()
+        # Don't re-sync files that are already in sync.
+        if line.endswith(' is uptodate'):
+            continue
+        # If it looks like a file, add it to our list.
         if files_regex.match(line):
-            if line.endswith(' is uptodate'):
-                line = line[:-len(' is uptodate')]
             files.append(line)
-        if len(files) % 1000 == 0:
-            logging.info('Found %d files to download so far', len(files))
-    logging.info('Found %d files to download', len(files))
+            # Logging that decreases exponentially over time.
+            if has_one_bit_set_or_is_zero(len(files)):
+                logging.info('Found %d files to download so far', len(files))
+    logging.info('Found %d files to download in total', len(files))
     process.wait()
     logging.info('rsync process exited with code %d', process.returncode)
     # Return code 24 from rsync is "partial transfer because some files
