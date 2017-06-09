@@ -308,12 +308,14 @@ def download_files(rsync_binary, rsync_url, files, destination):
                 # Download all the files.
                 logging.info('Synching %d files (already synched %d/%d)',
                              len(filenames), start, len(files))
+                # Run rsync.
+                # Use all the default arguments.
                 # Don't crash when ephemeral files disappear.
                 # Filenames in the temp file are null-separated.
                 # The filenames to transfer are in a file.
                 command = ([rsync_binary] + RSYNC_ARGS +
-                           ['--from0', '--files-from', temp.name, rsync_url,
-                            destination])
+                           ['--ignore-missing-args', '--from0', '--files-from',
+                            temp.name, rsync_url, destination])
                 error_code = subprocess.call(command)
                 if error_code not in (0, 24):
                     message = 'rsync download failed exit code: %d' % error_code
