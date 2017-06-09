@@ -122,50 +122,123 @@ def assert_mlab_hostname(hostname):
     return hostname
 
 
-# Use IPv4, compression, and limit total bandwidth usage to 10 Mbps
-RSYNC_ARGS = ['-4', '-z', '--bwlimit', '10000']
+def has_one_bit_set_or_is_zero(i):
+    """Returns true if the number has one bit set or is zero.
+
+    Adapted from https://goo.gl/mGdFkS but could also be from "Hacker's
+    Delight".
+    """
+    return (i & (i - 1)) == 0
+
+
+# Use IPv4, archive mode, compression, limit total bandwidth usage to 10 Mbps,
+# don't wait too long before bailing out, and make sure to chmod the files to
+# have sensible permissions.
+RSYNC_ARGS = ['-4', '-az', '--bwlimit=10000', '--timeout=300',
+              '--contimeout=300', '--chmod=u=rwX']
 
 
 @RSYNC_LIST_FILES_RUNS.time()
-def list_rsync_files(rsync_binary, rsync_url):
+def list_rsync_files(rsync_binary, rsync_url, destination):
     """Get a list of all files in the rsync module on the server.
 
     Lists all the files we might wish to download from the server. Be
     careful with the filenames this command returns, because they might
     not be safe for shell interpretation. Therefore, make sure that they
-    are never interpreted by a shell. In order to ensure that, we need
-    to have the full authoritative path to the rsync binary, which is the
-    thing we pass in here.  If something goes wrong with the download, exit.
+    are never interpreted by a shell.
 
     Args:
       rsync_binary: the full path location of rsync
       rsync_url: the rsync:// url to download the list from
+      destination: the directory to download to
 
     Returns:
       a list of filenames
+
+    Raises:
+      RecoverableScraperException when rsync doesn't run successfully
     """
-    try:
-        logging.info('rsync file list discovery from %s', rsync_url)
-        command = ([rsync_binary, '--list-only', '--recursive'] + RSYNC_ARGS +
-                   [rsync_url])
-        logging.info('Listing files on server with the command: %s',
-                     ' '.join(command))
-        lines = subprocess.check_output(command).splitlines()
-        files = []
-        for line in lines:
-            # None is a special whitespace arg for split
-            chunks = line.split(None, 4)
-            if chunks[0].startswith('d'):
-                continue
-            if len(chunks) != 5:
-                logging.error('Bad line in output: %s', line)
-                continue
-            files.append(chunks[4])
-        return files
-    except subprocess.CalledProcessError as error:
-        message = 'rsync file listing failed: %s' % str(error)
+    logging.info('rsync file list discovery from %s', rsync_url)
+    # A command that works to upgrade things incrementally is:
+    #  /usr/bin/rsync -4 -avvzn --bwlimit 10000 --timeout 120 --contimeout 120 \
+    #     rsync://ndt.iupui.mlab2.lba01.measurement-lab.org:7999/ndt \
+    #     scraper_data/ndt.iupui.mlab2.lba01.measurement-lab.org/ndt
+    # Most other codepaths on the rsync server seem to wait until the filelist
+    # is complete before sending the list of files, and doing that can, in
+    # extreme cases, mean that the socket times out and leaves the local scraper
+    # rsync in a half-open state.
+    #
+    # Here is an example output from that command:
+    #  opening tcp connection to ndt.iupui.mlab2.lba01.measurement-lab.org port
+    #  7999
+    #  sending daemon args: --server --sender -vvnlogDtprze.iLsfx --timeout=300
+    #  --bwlimit=10000 . ndt/  (7 args)
+    #  receiving incremental file list
+    #  delta-transmission enabled
+    #  [receiver] expand file_list pointer array to 524288 bytes, did move
+    #  [generator] expand file_list pointer array to 524288 bytes, did move
+    #  [receiver] expand file_list pointer array to 1048576 bytes, did move
+    #  [generator] expand file_list pointer array to 1048576 bytes, did move
+    #  [receiver] expand file_list pointer array to 2097152 bytes, did move
+    #  [generator] expand file_list pointer array to 2097152 bytes, did move
+    #  ./
+    #  2017/05/
+    #  2017/06/
+    #  2017/06/01/
+    #  2017/06/02/
+    #  2017/06/03/
+    #  2017/06/03/.gz is uptodate
+    #  2017/06/03/20170603T23:59:47.143624000Z_86.164.175.237.s2c_ndttrace.gz
+    #  2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.meta
+    # [snip]
+    # The lines with [generator] and [receiver] may happen at any point in the
+    # output.
+
+    # -n causes the whole thing to run in dry-run mode
+    # -vv causes the debug output which we parse
+    command = ([rsync_binary, '-n', '-vv'] +
+               RSYNC_ARGS +
+               [rsync_url, destination])
+    logging.info('Listing files on server with the command: %s',
+                 ' '.join(command))
+    process = subprocess.Popen(command, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+    files = []
+    # Only download things that are files and that respect the date-based
+    # directory structure.
+    files_regex = re.compile(r'^\d{4}/\d\d/\d\d/.*[^/]$')
+    line_count = 0
+    for line in process.stdout:
+        # Count output lines independently from files found.
+        line_count += 1
+        if has_one_bit_set_or_is_zero(line_count):
+            logging.info('%d lines of rsync output read', line_count)
+        # Get rid of the trailing newline.
+        line = line.strip()
+        # Don't re-sync files that are already in sync.
+        if line.endswith(' is uptodate'):
+            continue
+        # If it looks like a file, add it to our list.
+        if files_regex.match(line):
+            files.append(line)
+            # Logging that decreases exponentially over time.
+            if has_one_bit_set_or_is_zero(len(files)):
+                logging.info('Found %d files to download so far', len(files))
+    logging.info('Found %d files to download in total', len(files))
+    process.wait()
+    logging.info('rsync process exited with code %d', process.returncode)
+    # Return code 24 from rsync is "partial transfer because some files
+    # disappeared", which is totally fine with us - ephemeral files disappearing
+    # is no cause for alarm.
+    # Return code 23 is "partial transfer for other unknown reasons", which also
+    # can occur when files disappear on the server side.
+    # Neither return code should cause the listing to error out.
+    if process.returncode not in (0, 23, 24):
+        message = 'rsync file listing failed (%d): %s' % (process.returncode,
+                                                          process.stderr.read())
         logging.error(message)
         raise RecoverableScraperException('rsync_listing', message)
+    return files
 
 
 def remove_older_files(date, files):
@@ -223,7 +296,9 @@ def download_files(rsync_binary, rsync_url, files, destination):
     if len(files) == 0:
         logging.info('No files to be downloaded from %s', rsync_url)
         return
-    # Rsync all the files passed in
+    # Rsync all the files passed in.  Do this piecewise, because rsync allocates
+    # a per-file chunk of memory, so long file lists end up causing huge memory
+    # usage.
     for start in range(0, len(files), FILES_PER_RSYNC_DOWNLOAD):
         with RSYNC_FILE_CHUNK_DOWNLOADS.time():
             filenames = files[start:start + FILES_PER_RSYNC_DOWNLOAD]
@@ -233,20 +308,20 @@ def download_files(rsync_binary, rsync_url, files, destination):
                 temp.write('\0'.join(filenames))
                 temp.flush()
                 # Download all the files.
-                try:
-                    logging.info('Synching %d files (already synched %d/%d)',
-                                 len(filenames), start, len(files))
-                    # Transfer the file modification times.
-                    # Don't error out if a file gets deleted out from under us
-                    # during a large transfer.
-                    # Filenames in the temp file are null-separated
-                    command = ([rsync_binary] + RSYNC_ARGS +
-                               ['--times', '--ignore-missing-args', '--from0',
-                                '--files-from', temp.name, rsync_url,
-                                destination])
-                    subprocess.check_call(command)
-                except subprocess.CalledProcessError as error:
-                    message = 'rsync download failed: %s' % str(error)
+                logging.info('Synching %d files (already synched %d/%d)',
+                             len(filenames), start, len(files))
+                # Run rsync.
+                # Use all the default arguments.
+                # Don't crash when ephemeral files disappear.
+                # Filenames in the temp file are null-separated.
+                # The filenames to transfer are in a file.
+                command = ([rsync_binary] + RSYNC_ARGS + ['--from0',
+                                                          '--files-from',
+                                                          temp.name, rsync_url,
+                                                          destination])
+                error_code = subprocess.call(command)
+                if error_code not in (0, 24):
+                    message = 'rsync download failed exit code: %d' % error_code
                     logging.error(message)
                     raise RecoverableScraperException('rsync_download', message)
     logging.info('sync completed successfully from %s', rsync_url)
@@ -759,6 +834,38 @@ def init(args):  # pragma: no cover
     return (rsync_url, status, destination, storage_service)
 
 
+def remove_too_recent_files(filelist):
+    """Removes all files which have a too-recent timestamp in their filename.
+
+    For NDT in particular, files with very recent timestamps may be files in the
+    process of being created.  Some of the files that NDT creates, it
+    subsequently gzips and deletes the originals.  Disappearing files causes
+    rsync to freak out, so let's sidestep the problem by ensuring that if there
+    is a timestamp in the filename, then the file will be ignored until the
+    timestamp is sufficiently far in the past that we can be relatively
+    confident that the file won't disappear on us.
+
+    Note that this algorithm does a classically bad thing: it depends on clocks
+    in a distributed system.  However, depending on clocks with a 15-minute
+    granularity feels lower-risk than the classic problems that drove Lamport to
+    create vector clocks.
+    """
+    not_too_recent = []
+    border = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
+    for name in filelist:
+        timestamp = timestamp_from_filename(name)
+        if timestamp is None:
+            # When we can't determine the time, append the file.
+            not_too_recent.append(name)
+        elif timestamp < border:
+            # If the file is not too new, append the file
+            not_too_recent.append(name)
+        else:
+            # There is a timestamp, but the file is too new.
+            logging.debug('%s is too recent a file to download', name)
+    return not_too_recent
+
+
 def download(args, rsync_url, sync_status, destination):  # pragma: no cover
     """Rsync download all files that are new enough.
 
@@ -767,9 +874,11 @@ def download(args, rsync_url, sync_status, destination):  # pragma: no cover
     """
     sync_status.update_last_collection()
     last_archived_date = sync_status.get_last_archived_date()
-    all_remote_files = list_rsync_files(args.rsync_binary, rsync_url)
+    all_remote_files = list_rsync_files(args.rsync_binary, rsync_url,
+                                        destination)
     newer_files = remove_older_files(last_archived_date, all_remote_files)
-    download_files(args.rsync_binary, rsync_url, newer_files, destination)
+    stable_files = remove_too_recent_files(newer_files)
+    download_files(args.rsync_binary, rsync_url, stable_files, destination)
 
 
 def upload_if_allowed(args, sync_status, destination, storage_service):

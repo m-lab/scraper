@@ -24,6 +24,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 import freezegun
@@ -43,6 +44,13 @@ class TestScraper(unittest.TestCase):
         # for their presence and assert their contents.  For the purposes of
         # the test runner, log messages on stdout/stderr are spam.
         logging.getLogger().setLevel(logging.WARNING)
+
+    def test_one_bit(self):
+        for i in range(100):
+            if i in (0, 1, 2, 4, 8, 16, 32, 64):
+                self.assertTrue(scraper.has_one_bit_set_or_is_zero(i), i)
+            else:
+                self.assertFalse(scraper.has_one_bit_set_or_is_zero(i), i)
 
     def test_args(self):
         rsync_host = 'mlab1.dne0t.measurement-lab.org'
@@ -76,25 +84,85 @@ class TestScraper(unittest.TestCase):
             with testfixtures.OutputCapture() as _:
                 run_scraper.parse_cmdline(['-h'])
 
-    @mock.patch.object(subprocess, 'check_output')
     @testfixtures.log_capture()
-    def test_list_rsync_files(self, patched_subprocess, log):
+    def test_list_rsync_files(self):
         # pylint: disable=line-too-long
-        serverfiles = """\
-drwxr-xr-x          4,096 2016/01/06 05:43:33 .
-drwxr-xr-x          4,096 2016/10/01 00:06:59 2016
-drwxr-xr-x          4,096 2016/01/15 01:03:29 2016/01
-drwxr-xr-x          4,096 2016/01/06 22:32:01 2016/01/06
--rw-r--r--              0 2016/01/06 22:32:01 2016/01/06/.gz
--rw-r--r--            103 2016/01/06 05:43:36 2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz
--rw-r--r--            716 2016/01/06 05:43:36 2016/01/06/20160106T05:43:32.741066000Z_:0.meta
--rw-r--r--            101 2016/01/06 18:07:37 2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz
-BADBADBAD
--rw-r--r--            716 2016/01/06 18:07:37 2016/01/06/20160106T18:07:33.122784000Z_:0.meta
--rw-r--r--            103 2016/01/06 22:32:01 2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz"""
+        serverfiles = textwrap.dedent("""\
+            opening tcp connection to ndt.iupui.mlab2.lba01.measurement-lab.org port 7999
+            sending daemon args: --server --sender -vvnlogDtprze.iLsfx --timeout=300 --bwlimit=10000 . ndt/  (7 args)
+            receiving incremental file list
+            delta-transmission enabled
+            [receiver] expand file_list pointer array to 524288 bytes, did move
+            [generator] expand file_list pointer array to 524288 bytes, did move
+            [receiver] expand file_list pointer array to 2097152 bytes, did move
+            [generator] expand file_list pointer array to 2097152 bytes, did move
+            ./
+            2017/05/
+            2017/06/
+            2017/06/01/
+            2017/06/02/
+            2017/06/03/
+            2017/06/03/.gz
+            2017/06/03/20170603T23:59:47.143624000Z_86.164.175.237.s2c_ndttrace.gz
+            2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50280.cputime.gz
+            2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50280.meta
+            2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50281.s2c_snaplog.gz
+            2017/06/03/20170603T23:59:52.739997000Z_143.159.127.54.s2c_ndttrace.gz
+            2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233.c2s_ndttrace is uptodate
+            [receiver] expand file_list pointer array to 1048576 bytes, did move
+            [generator] expand file_list pointer array to 1048576 bytes, did move
+            2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:49151.cputime
+            2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:54633.c2s_snaplog
+            2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146.s2c_ndttrace.gz
+            BADLINE
+            2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.cputime.gz
+            2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.meta
+            2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50902.s2c_snaplog.gz""")
+        with tempfile.NamedTemporaryFile() as temp:
+            temp.write(serverfiles)
+            temp.flush()
+            fake_process = subprocess.Popen(['/bin/cat', temp.name],
+                                            stdout=subprocess.PIPE)
+            with mock.patch.object(subprocess, 'Popen') as mock_subprocess:
+                mock_subprocess.return_value = fake_process
+                files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost',
+                                                 '/tmp')
+        self.assertEqual(
+            ['2017/06/03/.gz',
+             '2017/06/03/20170603T23:59:47.143624000Z_86.164.175.237.s2c_ndttrace.gz',
+             '2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50280.cputime.gz',
+             '2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50280.meta',
+             '2017/06/03/20170603T23:59:47.143624000Z_host86-164-175-237.range86-164.btcentralplus.com:50281.s2c_snaplog.gz',
+             '2017/06/03/20170603T23:59:52.739997000Z_143.159.127.54.s2c_ndttrace.gz',
+             '2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:49151.cputime',
+             '2017/06/03/20170603T23:59:53.688992000Z_195.147.32.233:54633.c2s_snaplog',
+             '2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146.s2c_ndttrace.gz',
+             '2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.cputime.gz',
+             '2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.meta',
+             '2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50902.s2c_snaplog.gz'],
+            files)
         # pylint: enable=line-too-long
-        patched_subprocess.return_value = serverfiles
-        files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost')
+
+    @mock.patch.object(subprocess, 'Popen')
+    @testfixtures.log_capture()
+    def test_list_rsync_files_returns_24(self, patched_subprocess):
+        serverfiles = textwrap.dedent("""\
+            .
+            2016/
+            2016/01/
+            2016/01/06/
+            2016/01/06/.gz
+            2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz
+            2016/01/06/20160106T05:43:32.741066000Z_:0.meta
+            2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz
+            BADBADBAD
+            2016/01/06/20160106T18:07:33.122784000Z_:0.meta
+            2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz""")
+        mock_process = mock.Mock()
+        mock_process.returncode = 24
+        patched_subprocess.return_value = mock_process
+        mock_process.stdout = serverfiles.splitlines()
+        files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost', '')
         self.assertEqual([
             '2016/01/06/.gz',
             '2016/01/06/20160106T05:43:32.741066000Z_:0.cputime.gz',
@@ -103,14 +171,22 @@ BADBADBAD
             '2016/01/06/20160106T18:07:33.122784000Z_:0.meta',
             '2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz'
         ], files)
+
+    @mock.patch.object(subprocess, 'Popen')
+    @testfixtures.log_capture()
+    def test_list_rsync_files_throws_on_failure(self, patched_subprocess, log):
+        mock_process = mock.Mock()
+        mock_process.returncode = 1
+        mock_process.stdout = []
+        patched_subprocess.return_value = mock_process
+        with self.assertRaises(scraper.RecoverableScraperException):
+            _ = scraper.list_rsync_files('/usr/bin/rsync', 'localhost', '')
         self.assertIn('ERROR', [x.levelname for x in log.records])
-        self.assertTrue(any(any('BADBADBAD' in arg for arg in record.args)
-                            for record in log.records))
 
     @testfixtures.log_capture()
     def test_list_rsync_files_fails(self, log):
         with self.assertRaises(scraper.RecoverableScraperException):
-            scraper.list_rsync_files('/bin/false', 'localhost')
+            scraper.list_rsync_files('/bin/false', 'localhost', '')
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
@@ -162,6 +238,33 @@ BADBADBAD
                             for record in log.records))
         # pylint: enable=line-too-long
 
+    @freezegun.freeze_time('2016-10-26 18:10:00 UTC')
+    @testfixtures.log_capture()
+    def test_remove_too_recent_files(self):
+        # pylint: disable=line-too-long
+        files = [
+            '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:35192.s2c_snaplog.gz',
+            '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:39482.c2s_snaplog.gz',
+            '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.cputime.gz',
+            '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.meta',
+            '2016/10/26/no_time_stamp.txt',
+            '2016/10/26/20161026T18:02:59.898385000Z_45.56.98.222.c2s_ndttrace.gz',
+            '2016/10/26/20161026T18:02:59.898385000Z_45.56.98.222.s2c_ndttrace.gz',
+            '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.cputime.gz',
+            '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.meta',
+            '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:50264.s2c_snaplog.gz',
+            '2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:52410.c2s_snaplog.gz'
+        ]
+        filtered = scraper.remove_too_recent_files(files)
+        self.assertItemsEqual(
+            filtered,
+            ['2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:35192.s2c_snaplog.gz',
+             '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:39482.c2s_snaplog.gz',
+             '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.cputime.gz',
+             '2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.meta',
+             '2016/10/26/no_time_stamp.txt'])
+        # pylint: enable=line-too-long
+
     @testfixtures.log_capture()
     def test_download_files_fails_and_dies(self, log):
         with self.assertRaises(scraper.RecoverableScraperException):
@@ -175,8 +278,8 @@ BADBADBAD
         # If the next line doesn't raise SystemExit then the test passes
         scraper.download_files('/bin/false', 'localhost/', [], '/tmp')
 
-    @mock.patch.object(subprocess, 'check_call')
-    def test_download_files(self, patched_check_call):
+    @mock.patch.object(subprocess, 'call')
+    def test_download_files(self, patched_call):
         files_to_download = ['2016/10/26/DNE1', '2016/10/26/DNE2']
 
         def verify_contents(args):
@@ -187,14 +290,16 @@ BADBADBAD
             file_with_filenames = args[-3]
             files_downloaded = file(file_with_filenames).read().split('\0')
             self.assertEqual(files_to_download, files_downloaded)
+            return 0
 
-        patched_check_call.side_effect = verify_contents
+        patched_call.side_effect = verify_contents
+        self.assertEqual(patched_call.call_count, 0)
         scraper.download_files('/bin/true', 'localhost/', files_to_download,
                                '/tmp')
-        patched_check_call.assert_called_once()
+        self.assertEqual(patched_call.call_count, 1)
 
-    @mock.patch.object(subprocess, 'check_call')
-    def test_download_files_breaks_up_long_file_list(self, patched_check_call):
+    @mock.patch.object(subprocess, 'call')
+    def test_download_files_breaks_up_long_file_list(self, patched_call):
         files_to_download = ['2016/10/26/DNE.%d' % i for i in range(100070)]
         files_downloaded = []
 
@@ -208,12 +313,13 @@ BADBADBAD
             self.assertTrue(len(files) > 0)
             self.assertTrue(len(files) <= 1000)
             files_downloaded.extend(files)
+            return 0
 
-        patched_check_call.side_effect = verify_contents
+        patched_call.side_effect = verify_contents
         scraper.download_files('/bin/true', 'localhost/', files_to_download,
                                '/tmp')
         self.assertEqual(set(files_to_download), set(files_downloaded))
-        self.assertEqual(patched_check_call.call_count, 101)
+        self.assertEqual(patched_call.call_count, 101)
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     def test_new_archived_date_after_8am(self):
@@ -280,8 +386,8 @@ BADBADBAD
         client.key.return_value = {}
         status = scraper.SyncStatus(client, None)
         status.get_data()
-        client.key.assert_called_once()
-        client.get.assert_called_once()
+        self.assertEqual(client.key.call_count, 1)
+        self.assertEqual(client.get.call_count, 1)
         status.get_data()
         self.assertEqual(client.key.call_count, 1)
         self.assertEqual(client.get.call_count, 2)
@@ -348,7 +454,7 @@ BADBADBAD
     def test_update_last_archived_date(self, patched_update):
         status = scraper.SyncStatus(None, None)
         status.update_last_archived_date(datetime.date(2012, 2, 29))
-        patched_update.assert_called_once()
+        self.assertEqual(patched_update.call_count, 1)
         self.assertTrue(u'x2012-02-29' in patched_update.call_args[0])
         index = patched_update.call_args[0].index(u'x2012-02-29')
         self.assertEqual(type(patched_update.call_args[0][index]), unicode)
@@ -358,7 +464,7 @@ BADBADBAD
         client.get.return_value = None
         status = scraper.SyncStatus(client, None)
         status.update_data('key', 'value')
-        client.put.assert_called_once()
+        self.assertEqual(client.put.call_count, 1)
 
     @testfixtures.log_capture()
     def test_update_data_robustness(self, _log):
@@ -395,8 +501,8 @@ BADBADBAD
     def test_update_debug_msg(self, patched_update_data):
         status = scraper.SyncStatus(None, None)
         status.update_debug_message('msg')
-        patched_update_data.assert_called_once_with(
-            'errorsincelastsuccessful', 'msg')
+        self.assertEqual(patched_update_data.call_args,
+                         [('errorsincelastsuccessful', 'msg')])
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
 
@@ -404,7 +510,7 @@ BADBADBAD
     def test_update_debug_msg_too_large(self, patched_update_data):
         status = scraper.SyncStatus(None, None)
         status.update_debug_message('m' * 1600)
-        patched_update_data.assert_called_once()
+        self.assertEqual(patched_update_data.call_count, 1)
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
         self.assertTrue(len(patched_update_data.call_args[0][1]) < 1500)
@@ -414,8 +520,8 @@ BADBADBAD
     def test_update_last_collection(self, patched_update_data):
         status = scraper.SyncStatus(None, None)
         status.update_last_collection()
-        patched_update_data.assert_called_once_with('lastcollectionattempt',
-                                                    'x2016-01-28-07:43')
+        self.assertEqual(patched_update_data.call_args,
+                         [('lastcollectionattempt', 'x2016-01-28-07:43')])
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
 
@@ -423,8 +529,8 @@ BADBADBAD
     def test_update_mtime(self, patched_update_data):
         status = scraper.SyncStatus(None, None)
         status.update_mtime(7)
-        patched_update_data.assert_called_once_with(
-            'maxrawfilemtimearchived', 7)
+        self.assertEqual(patched_update_data.call_args,
+                         [('maxrawfilemtimearchived', 7)])
 
     @mock.patch.object(scraper.SyncStatus, 'update_data')
     @testfixtures.log_capture()
@@ -435,9 +541,9 @@ BADBADBAD
         logger.setLevel(logging.ERROR)
         logger.addHandler(loghandler)
         logger.info('INFORMATIVE')
-        patched_update_data.assert_not_called()
+        self.assertEqual(patched_update_data.call_count, 0)
         logger.error('BADNESS')
-        patched_update_data.assert_called_once()
+        self.assertEqual(patched_update_data.call_count, 1)
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
 
@@ -660,14 +766,14 @@ class TestScraperInTempDir(unittest.TestCase):
     @mock.patch.object(scraper, 'upload_up_to_date')
     def test_initial_upload_empty_disk(self, new_upload):
         scraper.upload_stale_disk({}, None, '.', None)
-        new_upload.assert_not_called()
+        self.assertEqual(new_upload.call_count, 0)
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     @mock.patch.object(scraper, 'upload_up_to_date')
     def test_initial_upload_no_safe_dirs(self, new_upload):
         os.makedirs('2016/01/28')
         scraper.upload_stale_disk({}, None, '.', None)
-        new_upload.assert_not_called()
+        self.assertEqual(new_upload.call_count, 0)
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     @mock.patch.object(scraper, 'upload_up_to_date')
