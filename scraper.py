@@ -212,7 +212,7 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
         # Count output lines independently from files found.
         line_count += 1
         if has_one_bit_set_or_is_zero(line_count):
-            logging.info('%d lines of rsync output read')
+            logging.info('%d lines of rsync output read', line_count)
         # Get rid of the trailing newline.
         line = line.strip()
         # Don't re-sync files that are already in sync.
@@ -230,7 +230,10 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     # Return code 24 from rsync is "partial transfer because some files
     # disappeared", which is totally fine with us - ephemeral files disappearing
     # is no cause for alarm.
-    if process.returncode not in (0, 24):
+    # Return code 23 is "partial transfer for other unknown reasons", which also
+    # can occur when files disappear on the server side.
+    # Neither return code should cause the listing to error out.
+    if process.returncode not in (0, 23, 24):
         message = 'rsync file listing failed (%d): %s' % (process.returncode,
                                                           process.stderr.read())
         logging.error(message)
