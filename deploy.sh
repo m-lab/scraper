@@ -68,8 +68,8 @@ then
 elif [[ "$1" == staging ]]
 then
   # These are the machines we scrape with our staging instance.
-  fill_in_templates 'mlab4' 11 claims deployment
-  fill_in_templates 'ndt.*mlab4' 110 claims deployment
+  fill_in_templates 'mlab4.[a-z]{3}[0-9]{2}' 11 claims deployment
+  fill_in_templates 'ndt.*mlab4.[a-z]{3}[0-9]{2}' 110 claims deployment
   cat operator/plsync/canary_machines.txt | (
       # Disable -x to prevent build log spam
       set +x
