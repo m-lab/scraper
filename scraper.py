@@ -74,9 +74,9 @@ BYTES_UPLOADED = prometheus_client.Counter(
     'scraper_bytes_uploaded',
     'Total bytes uploaded to GCS',
     ['bucket'])
-FILES_UPLOADED = prometheus_client.Gauge(
+FILES_UPLOADED = prometheus_client.Counter(
     'scraper_files_uploaded',
-    'Total file count of the files uploaded to GCS over the last 7 days',
+    'Total file count of the test files uploaded to GCS',
     ['day_of_week'])
 # The prometheus_client libraries confuse the linter.
 # pylint: disable=no-value-for-parameter
@@ -940,10 +940,8 @@ def upload_up_to_date(args, sync_status, destination,
             total_daily_files += num_files
             BYTES_UPLOADED.labels(bucket=args.bucket).inc(
                 os.stat(tgz_filename).st_size)
-        # pylint: disable=no-member
         FILES_UPLOADED.labels(
-            day_of_week=day_of_week(day)).set(total_daily_files)
-        # pylint: enable=no-member
+            day_of_week=day_of_week(day)).inc(total_daily_files)
         sync_status.update_last_archived_date(day)
         if max_mtime is not None:
             sync_status.update_mtime(max_mtime)
