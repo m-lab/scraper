@@ -74,10 +74,10 @@ BYTES_UPLOADED = prometheus_client.Counter(
     'scraper_bytes_uploaded',
     'Total bytes uploaded to GCS',
     ['bucket'])
-FILES_UPLOADED = prometheus_client.Counter(
+FILES_UPLOADED = prometheus_client.Gauge(
     'scraper_files_uploaded',
-    'Total file count of the files uploaded to GCS',
-    ['bucket'])
+    'Total file count of the files uploaded to GCS over the last 7 days',
+    ['day_of_week'])
 # The prometheus_client libraries confuse the linter.
 # pylint: disable=no-value-for-parameter
 RSYNC_LIST_FILES_RUNS = prometheus_client.Histogram(
@@ -901,6 +901,20 @@ def upload_stale_disk(args, sync_status, destination, storage_service):
                           last_okay_day)
 
 
+def day_of_week(day):
+    """Turn a datetime.date into a string representing the day of the week.
+
+    Ideally would be a method in datetime.date.
+    """
+    return ('Monday',
+            'Tuesday',
+            'Wednesday',
+            'Thursday',
+            'Friday',
+            'Saturday',
+            'Sunday')[day.weekday()]
+
+
 def upload_up_to_date(args, sync_status, destination,
                       storage_service,
                       candidate_last_archived_date):  # pragma: no cover
@@ -917,14 +931,19 @@ def upload_up_to_date(args, sync_status, destination,
         tarfile_template = create_tarfilename_template(day, args.rsync_host,
                                                        args.rsync_module,
                                                        args.tarfile_directory)
+        total_daily_files = 0
         for tgz_filename, max_mtime, num_files in create_temporary_tarfiles(
                 args.tar_binary, tarfile_template, destination, day,
                 args.max_uncompressed_size):
             upload_tarfile(storage_service, tgz_filename, day,
                            args.rsync_module, args.bucket)
-            FILES_UPLOADED.labels(bucket=args.bucket).inc(num_files)
+            total_daily_files += num_files
             BYTES_UPLOADED.labels(bucket=args.bucket).inc(
                 os.stat(tgz_filename).st_size)
+        # pylint: disable=no-member
+        FILES_UPLOADED.labels(
+            day_of_week=day_of_week(day)).set(total_daily_files)
+        # pylint: enable=no-member
         sync_status.update_last_archived_date(day)
         if max_mtime is not None:
             sync_status.update_mtime(max_mtime)
