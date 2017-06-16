@@ -574,6 +574,12 @@ class TestScraper(unittest.TestCase):
                 'ndt', '/tmp'),
             '/tmp/20150706T000000Z-mlab1-acc01-ndt-%04d.tgz')
 
+    def test_day_of_week(self):
+        self.assertEqual(scraper.day_of_week(datetime.date(2017, 6, 15)),
+                         'Thursday')
+        self.assertEqual(scraper.day_of_week(datetime.date(2017, 6, 16)),
+                         'Friday')
+
 
 class TestScraperInTempDir(unittest.TestCase):
 
