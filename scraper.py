@@ -751,10 +751,6 @@ class SyncStatus(object):
             logging.info('Key %s has no value. Making a new one.',
                          self._rsync_url)
             value = cloud_datastore.entity.Entity(key=self._key)
-            value[SyncStatus.COLLECTION_KEY] = u''
-            value[SyncStatus.DEBUG_MESSAGE_KEY] = u''
-            value[SyncStatus.LAST_COLLECTION_KEY] = u''
-            value[SyncStatus.MTIME_KEY] = 0
         value[entry_key] = entry_value
         self._client.put(value)
 
