@@ -940,6 +940,9 @@ def upload_up_to_date(args, sync_status, destination,
             total_daily_files += num_files
             BYTES_UPLOADED.labels(bucket=args.bucket).inc(
                 os.stat(tgz_filename).st_size)
+        # The FILES_UPLOADED count should only be incremented once we are
+        # confident that we won't re-upload all the files. Therefore, update it
+        # immediately before or after we call update_last_archived_date().
         FILES_UPLOADED.labels(
             day_of_week=day_of_week(day)).inc(total_daily_files)
         sync_status.update_last_archived_date(day)
