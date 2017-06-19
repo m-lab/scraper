@@ -569,9 +569,7 @@ class TestScraper(unittest.TestCase):
     def test_create_tarfile_template(self):
         self.assertEqual(
             scraper.create_tarfilename_template(
-                datetime.date(2015, 7, 6),
-                'ndt.iupui.mlab1.acc01.measurement-lab.org',
-                'ndt', '/tmp'),
+                datetime.date(2015, 7, 6), 'mlab1', 'acc01', 'ndt', '/tmp'),
             '/tmp/20150706T000000Z-mlab1-acc01-ndt-%04d.tgz')
 
     def test_day_of_week(self):

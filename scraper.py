@@ -77,7 +77,7 @@ BYTES_UPLOADED = prometheus_client.Counter(
 FILES_UPLOADED = prometheus_client.Counter(
     'scraper_files_uploaded',
     'Total file count of the test files uploaded to GCS',
-    ['day_of_week'])
+    ['rsync_host_module', 'day_of_week'])
 # The prometheus_client libraries confuse the linter.
 # pylint: disable=no-value-for-parameter
 RSYNC_LIST_FILES_RUNS = prometheus_client.Histogram(
@@ -497,7 +497,7 @@ def timestamp_from_filename(filename):
                                  int(match.group(7), 10))
 
 
-def create_tarfilename_template(day, host, experiment, tarfile_directory):
+def create_tarfilename_template(day, node, site, experiment, tarfile_directory):
     """Create a template tarfile name from the passed-in values.
 
     Tarfile names look like:
@@ -507,7 +507,6 @@ def create_tarfilename_template(day, host, experiment, tarfile_directory):
     day, which means that for that file this function would return the template:
       '20150706T000000Z-mlab1-acc01-ndt-%04d.tgz'
     """
-    node, site = node_and_site(host)
     filename_prefix = '%d%02d%02dT000000Z-%s-%s-%s-' % (
         day.year, day.month, day.day, node, site, experiment)
     filename_suffix = '.tgz'
@@ -924,7 +923,8 @@ def upload_up_to_date(args, sync_status, destination,
     for day in find_all_days_to_upload(destination,
                                        candidate_last_archived_date):
         max_mtime = None
-        tarfile_template = create_tarfilename_template(day, args.rsync_host,
+        node, site = node_and_site(args.rsync_host)
+        tarfile_template = create_tarfilename_template(day, node, site,
                                                        args.rsync_module,
                                                        args.tarfile_directory)
         total_daily_files = 0
@@ -940,6 +940,7 @@ def upload_up_to_date(args, sync_status, destination,
         # confident that we won't re-upload all the files. Therefore, update it
         # immediately before or after we call update_last_archived_date().
         FILES_UPLOADED.labels(
+            rsync_host_module='%s-%s-%s' % (node, site, args.rsync_module),
             day_of_week=day_of_week(day)).inc(total_daily_files)
         sync_status.update_last_archived_date(day)
         if max_mtime is not None:
