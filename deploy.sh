@@ -58,8 +58,12 @@ if [[ "$1" == production ]]
 then
   # We need more quota to support these numbers
   # No mlab4s in prod for now.  They are in staging.
-  fill_in_templates '.*\.mlab[123]\.[a-z]{3}\d\d\..*' 10 claims deployment
-  fill_in_templates '.*ndt.*\.mlab[123]\.[a-z]{3}\d\d\..*' 110 claims deployment
+  cat operator/plsync/production_patterns.txt \
+    | while read PATTERN
+      do
+        fill_in_templates "${PATTERN}" 11 claims deployment
+        fill_in_templates "ndt.*${PATTERN}" 110 claims deployment
+      done
   PROJECT=mlab-oti
   BUCKET=scraper-mlab-oti
   DATASTORE_NAMESPACE=scraper
@@ -68,18 +72,15 @@ then
 elif [[ "$1" == staging ]]
 then
   # These are the machines we scrape with our staging instance.
-  fill_in_templates 'mlab4.[a-z]{3}[0-9]{2}' 11 claims deployment
-  fill_in_templates 'ndt.*mlab4.[a-z]{3}[0-9]{2}' 110 claims deployment
-  cat operator/plsync/canary_machines.txt | (
-      # Disable -x to prevent build log spam
-      set +x
-      while read
+  # Disable -x to prevent build log spam
+  set +x
+  cat operator/plsync/staging_patterns.txt operator/plsync/canary_machines.txt \
+    | while read PATTERN
       do
-        fill_in_templates "${REPLY}" 11 claims deployment
-        fill_in_templates "ndt.*${REPLY}" 110 claims deployment
+        fill_in_templates "${PATTERN}" 11 claims deployment
+        fill_in_templates "ndt.*${PATTERN}" 110 claims deployment
       done
-      # Re-enable -x to aid debugging
-      set -x)
+  set -x
   KEY_FILE=/tmp/staging-secret-key.json
   PROJECT=mlab-staging
   BUCKET=scraper-mlab-staging
