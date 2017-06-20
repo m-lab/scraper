@@ -61,7 +61,7 @@ then
   cat operator/plsync/production_patterns.txt \
     | while read PATTERN
       do
-        fill_in_templates "${PATTERN}" 10 claims deployment
+        fill_in_templates "${PATTERN}" 11 claims deployment
         fill_in_templates "ndt.*${PATTERN}" 110 claims deployment
       done
   PROJECT=mlab-oti
@@ -77,7 +77,7 @@ then
   cat operator/plsync/staging_patterns.txt operator/plsync/canary_machines.txt \
     | while read PATTERN
       do
-        fill_in_templates "${PATTERN}" 10 claims deployment
+        fill_in_templates "${PATTERN}" 11 claims deployment
         fill_in_templates "ndt.*${PATTERN}" 110 claims deployment
       done
   set -x
