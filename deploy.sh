@@ -81,7 +81,7 @@ then
         fill_in_templates "ndt.*${PATTERN}" 110 claims deployment
       done
   set -x
-  KEY_FILE=/tmp/staging-secret-key.json
+  KEY_FILE=/tmp/mlab-staging.json
   PROJECT=mlab-staging
   BUCKET=scraper-mlab-staging
   DATASTORE_NAMESPACE=scraper
