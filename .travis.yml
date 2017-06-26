@@ -34,12 +34,15 @@ deploy:
   skip_cleanup: true
   on:
     repo: m-lab/scraper
-    all_branches: true
-    condition: $TRAVIS_BRANCH == staging
+    branch: staging
 
 ###############################
 ## Production.
-# TODO: Add scraper support for mlab-oti
+- provider: script
+  script:  ./deploy.sh production travis
+  on:
+    repo: m-lab/scraper
+    branch: master
 
 - provider: script
   script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-oti
