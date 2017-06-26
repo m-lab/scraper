@@ -64,6 +64,7 @@ then
         fill_in_templates "${PATTERN}" 11 claims deployment
         fill_in_templates "ndt.*${PATTERN}" 110 claims deployment
       done
+  KEY_FILE=/tmp/mlab-oti.json
   PROJECT=mlab-oti
   BUCKET=scraper-mlab-oti
   DATASTORE_NAMESPACE=scraper
