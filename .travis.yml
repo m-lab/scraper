@@ -16,11 +16,41 @@ install:
 script: coverage run --source='.' -m unittest discover --pattern='*_test.py'
 after_success: coveralls
 deploy:
+
+###############################
+## Sandbox.
+# TODO: Add support for mlab-sandbox
+
+###############################
+## Staging.
 - provider: script
   script:  ./deploy.sh staging travis
   on:
     repo: m-lab/scraper
     branch: staging
+
+- provider: script
+  script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-staging
+  skip_cleanup: true
+  on:
+    repo: m-lab/scraper
+    branch: staging
+
+###############################
+## Production.
+- provider: script
+  script:  ./deploy.sh production travis
+  on:
+    repo: m-lab/scraper
+    branch: master
+
+- provider: script
+  script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-oti
+  skip_cleanup: true
+  on:
+    repo: m-lab/scraper
+    branch: master
+
 before_install:
-- travis/decrypt.sh "$encrypted_2d1b9fd64fca_key" "$encrypted_2d1b9fd64fca_iv"
-  keys/credentials.tar.gz.enc /tmp/credentials.tar.gz /tmp
+- travis/decrypt.sh "$encrypted_24846e316994_key" "$encrypted_24846e316994_iv"
+  keys/service-accounts.tar.enc /tmp/service-accounts.tar /tmp
