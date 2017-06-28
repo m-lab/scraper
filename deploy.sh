@@ -143,6 +143,10 @@ ls deployment/ \
   | sed -e 's/^deploy-//' -e 's/.yml$//' \
   | sort \
   > ${DESIRED_DEPLOYMENTS}
+# By default, comm displays three columns of output: stuff that's only in the
+# first file (1), stuff that's only in the second (2), and stuff that's in both
+# (3).  We use -2 and -3 to suppress the reports of (2) and (3), to get a list
+# of the current deployments that are not in the list of desired deployments.
 comm -3 -2 ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS} \
   | while read DEPLOY; do
       kubectl -n scraper delete deploy/${DEPLOY}
