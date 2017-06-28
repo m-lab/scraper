@@ -131,6 +131,29 @@ DEPLOYOUT=$(mktemp deployments.XXXXXX)
                                                           exit 1)
 echo Applied $(wc -l ${DEPLOYOUT} | awk '{print $1}') deployments
 
+# Delete all jobs in the scraper namespace that do not have a corresponding
+# template file.  Also delete their claims.
+CURRENT_DEPLOYMENTS=$(mktemp current_deployments.XXXXXX)
+kubectl -n scraper get deploy --no-headers \
+  | awk '{print $1}' \
+  | sort \
+  > ${CURRENT_DEPLOYMENTS}
+DESIRED_DEPLOYMENTS=$(mktemp desired_deployments.XXXXXX)
+ls deployment/ \
+  | sed -e 's/^deploy-//' -e 's/.yml$//' \
+  | sort \
+  > ${DESIRED_DEPLOYMENTS}
+# By default, comm displays three columns of output: stuff that's only in the
+# first file (1), stuff that's only in the second (2), and stuff that's in both
+# (3).  We use -2 and -3 to suppress the reports of (2) and (3), to get a list
+# of the current deployments that are not in the list of desired deployments.
+comm -3 -2 ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS} \
+  | while read DEPLOY; do
+      kubectl -n scraper delete deploy/${DEPLOY}
+      kubectl -n scraper delete persistentvolumeclaim/claim-${DEPLOY}
+    done
+rm ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS}
+
 # Output debug info
 echo kubectl returned success from "'$0 $@'" for all operations.
 echo Suppressed output is appended below to aid future debugging:
