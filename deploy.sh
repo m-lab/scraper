@@ -149,8 +149,8 @@ ls deployment/ \
 # of the current deployments that are not in the list of desired deployments.
 comm -3 -2 ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS} \
   | while read DEPLOY; do
-      kubectl -n scraper delete deploy/${DEPLOY} --now --force --grace-period=1
-      kubectl -n scraper delete persistentvolumeclaim/claim-${DEPLOY} --now --force --grace-period=1
+      kubectl -n scraper delete deploy/${DEPLOY} --now --force
+      kubectl -n scraper delete persistentvolumeclaim/claim-${DEPLOY} --now --force
     done
 rm ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS}
 
