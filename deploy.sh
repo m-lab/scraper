@@ -143,13 +143,25 @@ ls deployment/ \
   | sed -e 's/^deploy-//' -e 's/.yml$//' \
   | sort \
   > ${DESIRED_DEPLOYMENTS}
+# To delete stuff either takes way too long, or requires using the kubectl proxy
+# to set things using curl that are unsettable in the CLI client.
+kubectl proxy --port=8080 &
+sleep 10  # Lose the race condition with kubectl's startup
 # By default, comm displays three columns of output: stuff that's only in the
 # first file (1), stuff that's only in the second (2), and stuff that's in both
 # (3).  We use -2 and -3 to suppress the reports of (2) and (3), to get a list
 # of the current deployments that are not in the list of desired deployments.
-comm -3 -2 ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS} \
+comm -2 -3 ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS} \
   | while read DEPLOY; do
-      kubectl -n scraper delete deploy/${DEPLOY} --now --force
+      # We wish we could just:
+      #   kubectl -n scraper delete deploy/${DEPLOY} --now --force
+      # But we can't, so we use the solution from
+      # https://kubernetes.io/docs/concepts/workloads/controllers/garbage-collection/
+      curl -X DELETE localhost:8080/apis/extensions/v1beta1/namespaces/scraper/deployments/${DEPLOY} \
+        -d '{"kind":"DeleteOptions","apiVersion":"v1","propagationPolicy":"Background"}' \
+        -H "Content-Type: application/json"
+      # This only deletes one thing, rather than recursively deleting many
+      # things, so this should still work.
       kubectl -n scraper delete persistentvolumeclaim/claim-${DEPLOY} --now --force
     done
 rm ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS}
