@@ -153,15 +153,23 @@ sleep 10  # Lose the race condition with kubectl's startup
 # of the current deployments that are not in the list of desired deployments.
 comm -2 -3 ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS} \
   | while read DEPLOY; do
-      # We wish we could just:
-      #   kubectl -n scraper delete deploy/${DEPLOY} --now --force
-      # But we can't, so we use the solution from
+      # We wish we could just call:
+      #   kubectl -n scraper delete deploy/${DEPLOY}
+      # and have it return quickly.  Unfortunately, it times out on large
+      # clusters.  So we use the solution from
       # https://kubernetes.io/docs/concepts/workloads/controllers/garbage-collection/
+      #
+      # TODO(dev): This is ugly and is terrible, so once `kubectl delete`
+      # supports a propagationPolicy argument, we should switch over to that
+      # and eliminate the kubectl proxy + sleep + curl combo.  Note that this
+      # just deletes the deployment and then the propagationPolicy causes all
+      # orphaned resources to be garbage-collected by the cluster.
       curl -X DELETE localhost:8080/apis/extensions/v1beta1/namespaces/scraper/deployments/${DEPLOY} \
         -d '{"kind":"DeleteOptions","apiVersion":"v1","propagationPolicy":"Background"}' \
         -H "Content-Type: application/json"
-      # This only deletes one thing, rather than recursively deleting many
-      # things, so this should still work.
+      # Deleting a persistentvolumeclaim deletes just one thing, rather than
+      # recursively deleting many things, so this kubectl call should finish
+      # quickly and not time out.
       kubectl -n scraper delete persistentvolumeclaim/claim-${DEPLOY} --now --force
     done
 rm ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS}
