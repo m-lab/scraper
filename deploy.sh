@@ -131,6 +131,49 @@ DEPLOYOUT=$(mktemp deployments.XXXXXX)
                                                           exit 1)
 echo Applied $(wc -l ${DEPLOYOUT} | awk '{print $1}') deployments
 
+# Delete all jobs in the scraper namespace that do not have a corresponding
+# template file.  Also delete their claims.
+CURRENT_DEPLOYMENTS=$(mktemp current_deployments.XXXXXX)
+kubectl -n scraper get deploy --no-headers \
+  | awk '{print $1}' \
+  | sort \
+  > ${CURRENT_DEPLOYMENTS}
+DESIRED_DEPLOYMENTS=$(mktemp desired_deployments.XXXXXX)
+ls deployment/ \
+  | sed -e 's/^deploy-//' -e 's/.yml$//' \
+  | sort \
+  > ${DESIRED_DEPLOYMENTS}
+# To delete stuff either takes way too long, or requires using the kubectl proxy
+# to set things using curl that are unsettable in the CLI client.
+kubectl proxy --port=8080 &
+sleep 10  # Lose the race condition with kubectl's startup
+# By default, comm displays three columns of output: stuff that's only in the
+# first file (1), stuff that's only in the second (2), and stuff that's in both
+# (3).  We use -2 and -3 to suppress the reports of (2) and (3), to get a list
+# of the current deployments that are not in the list of desired deployments.
+comm -2 -3 ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS} \
+  | while read DEPLOY; do
+      # We wish we could just call:
+      #   kubectl -n scraper delete deploy/${DEPLOY}
+      # and have it return quickly.  Unfortunately, it times out on large
+      # clusters.  So we use the solution from
+      # https://kubernetes.io/docs/concepts/workloads/controllers/garbage-collection/
+      #
+      # TODO(dev): This is ugly and is terrible, so once `kubectl delete`
+      # supports a propagationPolicy argument, we should switch over to that
+      # and eliminate the kubectl proxy + sleep + curl combo.  Note that this
+      # just deletes the deployment and then the propagationPolicy causes all
+      # orphaned resources to be garbage-collected by the cluster.
+      curl -X DELETE localhost:8080/apis/extensions/v1beta1/namespaces/scraper/deployments/${DEPLOY} \
+        -d '{"kind":"DeleteOptions","apiVersion":"v1","propagationPolicy":"Background"}' \
+        -H "Content-Type: application/json"
+      # Deleting a persistentvolumeclaim deletes just one thing, rather than
+      # recursively deleting many things, so this kubectl call should finish
+      # quickly and not time out.
+      kubectl -n scraper delete persistentvolumeclaim/claim-${DEPLOY} --now --force
+    done
+rm ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS}
+
 # Output debug info
 echo kubectl returned success from "'$0 $@'" for all operations.
 echo Suppressed output is appended below to aid future debugging:
