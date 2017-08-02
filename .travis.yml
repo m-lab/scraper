@@ -27,14 +27,14 @@ deploy:
   script:  ./deploy.sh staging travis
   on:
     repo: m-lab/scraper
-    branch: staging
+    branch: master
 
 - provider: script
   script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-staging
   skip_cleanup: true
   on:
     repo: m-lab/scraper
-    branch: staging
+    branch: master
 
 ###############################
 ## Production.
@@ -42,14 +42,14 @@ deploy:
   script:  ./deploy.sh production travis
   on:
     repo: m-lab/scraper
-    branch: master
+    tags: true
 
 - provider: script
   script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-oti
   skip_cleanup: true
   on:
     repo: m-lab/scraper
-    branch: master
+    tags: true
 
 before_install:
 - travis/decrypt.sh "$encrypted_24846e316994_key" "$encrypted_24846e316994_iv"
