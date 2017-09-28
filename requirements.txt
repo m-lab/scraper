@@ -4,3 +4,4 @@ google-cloud-datastore
 google-compute-engine
 prometheus_client
 retry
+six
