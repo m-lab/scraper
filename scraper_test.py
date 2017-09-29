@@ -31,7 +31,9 @@ import freezegun
 import mock
 import testfixtures
 
+# pylint: disable=no-name-in-module
 import google.cloud.exceptions as cloud_exceptions
+# pylint: enable=no-name-in-module
 
 import run_scraper
 import scraper

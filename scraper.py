@@ -39,7 +39,10 @@ import prometheus_client
 import retry
 
 from oauth2client.contrib import gce
+
+# pylint: disable=no-name-in-module
 import google.cloud.datastore as cloud_datastore
+# pylint: enable=no-name-in-module
 
 
 # Three kinds of exception, a base and two that contain hints about what can be
@@ -293,7 +296,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
       destination: the directory on the local host to put the files
     """
     files = list(files)
-    if len(files) == 0:
+    if not files:
         logging.info('No files to be downloaded from %s', rsync_url)
         return
     # Rsync all the files passed in.  Do this piecewise, because rsync allocates
