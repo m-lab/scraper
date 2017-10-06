@@ -105,6 +105,8 @@ fi
     NAMESPACE ${DATASTORE_NAMESPACE} \
     GITHUB_COMMIT http://github.com/m-lab/scraper/tree/${GIT_COMMIT}
 
+exit
+
 # Build the container and save it to GCR
 ./travis/build_and_push_container.sh \
     gcr.io/${PROJECT}/github-m-lab-scraper:${GIT_COMMIT} ${PROJECT}
