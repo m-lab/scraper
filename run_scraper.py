@@ -164,7 +164,7 @@ def parse_cmdline(args):
     return parser.parse_args(args)
 
 
-def main(argv):  # pragma: no cover
+def main(argv):
     """Run scraper.py in an infinite loop."""
     args = parse_cmdline(argv[1:])
     rsync_url, status, destination, storage_service = scraper.init(args)

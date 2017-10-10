@@ -587,7 +587,7 @@ TARFILE_UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024
              max_delay=300,  # but never more than 5 minutes.
              logger=logging.getLogger())
 def upload_tarfile(service, tgz_filename, date, experiment,
-                   bucket):  # pragma: no cover
+                   bucket):
     """Uploads a tarfile to Google Cloud Storage for later processing.
 
     Puts the file into a GCS bucket. If a file of that same name already exists,
@@ -793,7 +793,7 @@ class SyncStatusLogHandler(logging.Handler):
         """Abstract in the base class, overwritten to keep the linter happy."""
 
 
-def init(args):  # pragma: no cover
+def init(args):
     """Initialize the scraper library.
 
     The discovery interface means that the contents of some libraries is
@@ -864,7 +864,7 @@ def remove_too_recent_files(filelist):
     return not_too_recent
 
 
-def download(args, rsync_url, sync_status, destination):  # pragma: no cover
+def download(args, rsync_url, sync_status, destination):
     """Rsync download all files that are new enough.
 
     Find the current last_archived_date from cloud datastore, then get the file
@@ -915,7 +915,7 @@ def day_of_week(day):
 
 def upload_up_to_date(args, sync_status, destination,
                       storage_service,
-                      candidate_last_archived_date):  # pragma: no cover
+                      candidate_last_archived_date):
     """Tar and upload local data.
 
     Tar up what we have for each unarchived day that is sufficiently in the past
