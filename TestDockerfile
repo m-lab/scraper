@@ -1,6 +1,10 @@
 FROM scraper
 MAINTAINER Peter Boothe <pboothe@google.com>
 # Install all the python test requirements
-RUN apk add git libffi-dev openssl-dev curl openjdk8
+RUN apk add git libffi-dev openssl-dev curl openjdk8 rsync
 ADD test-requirements.txt /test-requirements.txt
 RUN pip install -r test-requirements.txt
+# Install the datastore emulator
+ADD travis/install_gcloud.sh /install_gcloud.sh
+RUN chmod +x /install_gcloud.sh
+RUN /install_gcloud.sh cloud-datastore-emulator beta
