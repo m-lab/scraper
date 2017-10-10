@@ -197,7 +197,7 @@ def main(argv):  # pragma: no cover
         #
         # That said, don't sleep for more than two hours.
         sleep_time = min(random.expovariate(1.0 / args.expected_wait_time),
-                         7200)
+                         3600)
         logging.info('Sleeping for %g seconds', sleep_time)
         with SLEEPS.time():
             time.sleep(sleep_time)
