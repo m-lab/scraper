@@ -200,7 +200,7 @@ def main(argv):
         # distribution.  The denominator of the fraction in the code below is
         # the mean sleep time in seconds.
         #
-        # That said, don't sleep for more than two hours.
+        # That said, don't sleep for more than an hour.
         sleep_time = min(random.expovariate(1.0 / args.expected_wait_time),
                          3600)
         logging.info('Sleeping for %g seconds', sleep_time)

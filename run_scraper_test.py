@@ -148,8 +148,11 @@ class EndToEndWithFakes(unittest.TestCase):
         mock_download.side_effect = scraper.RecoverableScraperException(
             'fake_label', 'faked_exception')
         with freezegun.freeze_time() as frozen_time:
-            mock_sleep.side_effect = lambda seconds: frozen_time.tick(
-                datetime.timedelta(seconds=seconds))
+            slept_seconds = [0]
+            def fake_sleep(seconds):
+                slept_seconds[0] += seconds
+                frozen_time.tick(datetime.timedelta(seconds=seconds))
+            mock_sleep.side_effect = fake_sleep
             run_scraper.main([
                 'run_as_e2e_test',
                 '--oneshot',
@@ -158,6 +161,7 @@ class EndToEndWithFakes(unittest.TestCase):
                 '--data_dir', '/scraper_data',
                 '--metrics_port', str(EndToEndWithFakes.prometheus_port),
                 '--max_uncompressed_size', '1024'])
+            self.assertLessEqual(slept_seconds[0], 3600)
 
 
 if __name__ == '__main__':  # pragma: no cover
