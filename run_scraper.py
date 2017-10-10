@@ -193,8 +193,6 @@ def main(argv):
         except scraper.RecoverableScraperException as error:
             logging.error('Scrape and upload failed: %s', error.message)
             SCRAPER_SUCCESS.labels(message=str(error.prometheus_label)).inc()
-        if args.oneshot:
-            break
         # In order to prevent a thundering herd of rsync jobs, we spread the
         # jobs around in a memoryless way.  By choosing our inter-job sleep
         # time from an exponential distribution, we ensure that the resulting
@@ -208,6 +206,8 @@ def main(argv):
         logging.info('Sleeping for %g seconds', sleep_time)
         with SLEEPS.time():
             time.sleep(sleep_time)
+        if args.oneshot:
+            break
 
 
 if __name__ == '__main__':  # pragma: no cover
