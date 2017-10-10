@@ -18,8 +18,6 @@
 #
 # pylint: disable=missing-docstring, no-self-use, too-many-public-methods
 
-"""Tests for run_scraper, representing end-to-end tests of scraper as a whole."""
-
 import unittest
 
 import freezegun

@@ -1,0 +1,6 @@
+FROM scraper
+MAINTAINER Peter Boothe <pboothe@google.com>
+# Install all the python test requirements
+RUN apk add git libffi-dev openssl-dev curl openjdk8
+ADD test-requirements.txt /test-requirements.txt
+RUN pip install -r test-requirements.txt
