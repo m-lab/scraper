@@ -18,13 +18,11 @@
 #
 # pylint: disable=missing-docstring, no-self-use, too-many-public-methods
 
-import datetime
 import os
 import shutil
 import unittest
 
 import apiclient
-import freezegun
 import mock
 import requests
 import testfixtures
@@ -129,39 +127,38 @@ class EndToEndWithFakes(unittest.TestCase):
         EndToEndWithFakes.prometheus_port += 1
 
     @mock.patch('time.sleep')
-    def test_main(self, mock_sleep):
-        with freezegun.freeze_time() as frozen_time:
-            mock_sleep.side_effect = lambda seconds: frozen_time.tick(
-                datetime.timedelta(seconds=seconds))
-            run_scraper.main([
-                'run_as_e2e_test',
-                '--oneshot',
-                '--rsync_host', 'ndt.iupui.mlab4.xxx08.measurement-lab.org',
-                '--rsync_module', 'iupui_ndt',
-                '--data_dir', '/scraper_data',
-                '--metrics_port', str(EndToEndWithFakes.prometheus_port),
-                '--max_uncompressed_size', '1024'])
+    def test_main(self, _mock_sleep):
+        run_scraper.main([
+            'run_as_e2e_test', '--oneshot',
+            '--rsync_host', 'ndt.iupui.mlab4.xxx08.measurement-lab.org',
+            '--rsync_module', 'iupui_ndt',
+            '--data_dir', '/scraper_data',
+            '--metrics_port', str(EndToEndWithFakes.prometheus_port),
+            '--max_uncompressed_size', '1024'])
 
     @mock.patch.object(scraper, 'download')
     @mock.patch('time.sleep')
     def test_main_with_recoverable_failure(self, mock_sleep, mock_download):
         mock_download.side_effect = scraper.RecoverableScraperException(
             'fake_label', 'faked_exception')
-        with freezegun.freeze_time() as frozen_time:
-            slept_seconds = [0]
-            def fake_sleep(seconds):
-                slept_seconds[0] += seconds
-                frozen_time.tick(datetime.timedelta(seconds=seconds))
-            mock_sleep.side_effect = fake_sleep
-            run_scraper.main([
-                'run_as_e2e_test',
-                '--oneshot',
-                '--rsync_host', 'ndt.iupui.mlab4.xxx08.measurement-lab.org',
-                '--rsync_module', 'iupui_ndt',
-                '--data_dir', '/scraper_data',
-                '--metrics_port', str(EndToEndWithFakes.prometheus_port),
-                '--max_uncompressed_size', '1024'])
-            self.assertLessEqual(slept_seconds[0], 3600)
+
+        slept_seconds = [0]
+
+        def fake_sleep(seconds):
+            slept_seconds[0] += seconds
+
+        mock_sleep.side_effect = fake_sleep
+
+        run_scraper.main([
+            'run_as_e2e_test',
+            '--oneshot',
+            '--rsync_host', 'ndt.iupui.mlab4.xxx08.measurement-lab.org',
+            '--rsync_module', 'iupui_ndt',
+            '--data_dir', '/scraper_data',
+            '--metrics_port', str(EndToEndWithFakes.prometheus_port),
+            '--max_uncompressed_size', '1024'])
+
+        self.assertLessEqual(slept_seconds[0], 3600)
 
 
 if __name__ == '__main__':  # pragma: no cover
