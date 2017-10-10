@@ -18,11 +18,21 @@
 #
 # pylint: disable=missing-docstring, no-self-use, too-many-public-methods
 
+import os
 import unittest
 
+import apiclient
 import freezegun
 import mock
+import requests
 import testfixtures
+
+from oauth2client.contrib import gce
+
+# pylint: disable=no-name-in-module
+from google.cloud import datastore
+import google.auth.credentials
+# pylint: enable=no-name-in-module
 
 import run_scraper
 
@@ -55,11 +65,64 @@ class TestRunScraper(unittest.TestCase):
         self.assertEqual(args.rsync_binary, '/usr/bin/rsync')
         self.assertEqual(args.rsync_port, 7999)
         self.assertEqual(args.max_uncompressed_size, 1000000000)
+        self.assertFalse(args.oneshot)
 
     def test_args_help(self):
         with self.assertRaises(SystemExit):
             with testfixtures.OutputCapture() as _:
                 run_scraper.parse_cmdline(['-h'])
+
+
+class EmulatorCreds(google.auth.credentials.Credentials):
+    """A mock credential object.
+
+    Used to avoid the need for auth entirely when using local versions of cloud
+    services.
+
+    Based on:
+       https://github.com/GoogleCloudPlatform/google-cloud-python/blob/3caed41b88eb58673ee5c3396afa3f8fff97d4d4/test_utils/test_utils/system.py#L33
+    """
+
+    def refresh(self, _request):  # pragma: no cover
+        raise RuntimeError('Should never be called.')
+
+
+class EndToEndWithFakes(unittest.TestCase):
+    def setUp(self):
+        os.makedirs('/tmp/iupui_ndt/2016/01/27')
+        os.makedirs('/tmp/iupui_ndt/2016/01/28')
+        os.makedirs('/tmp/iupui_ndt/2016/01/29')
+        # Patch credentials
+        creds_patcher = mock.patch.object(
+            gce, 'AppAssertionCredentials',
+            return_value=EmulatorCreds())
+        creds_patcher.start()
+        self.addCleanup(creds_patcher.stop)
+        fake_datastore_client = datastore.Client(project='mlab-sandbox',
+                                                 namespace='test',
+                                                 credentials=EmulatorCreds(),
+                                                 _http=requests.Session())
+        # Make datastore clients connect to the fake one
+        datastore_client_patcher = mock.patch.object(
+            datastore, 'Client', return_value=fake_datastore_client)
+        datastore_client_patcher.start()
+        self.addCleanup(datastore_client_patcher.stop)
+        # Make an entirely mocked storage service
+        self.mock_storage = mock.MagicMock()
+        discovery_build_patcher = mock.patch.object(
+            apiclient.discovery, 'build', return_value=self.mock_storage)
+        discovery_build_patcher.start()
+        self.addCleanup(discovery_build_patcher.stop)
+
+    def test_main(self):
+        run_scraper.main(['run_as_e2e_test',
+                          '--oneshot',
+                          '--rsync_host', 'ndt.iupui.mlab4.xxx08.measurement-lab.org',
+                          '--rsync_module', 'iupui_ndt',
+                          '--data_dir', '/scraper_data',
+                          '--max_uncompressed_size', '1024'])
+
+
 
 
 if __name__ == '__main__':  # pragma: no cover

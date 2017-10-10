@@ -161,6 +161,11 @@ def parse_cmdline(args):
         type=str,
         default='mlab-storage-scraper-test',
         help='The Google Cloud Storage bucket to upload to')
+    parser.add_argument(
+        '--oneshot',
+        default=False,
+        action='store_true',
+        help='Just download and upload once and then quit.')
     return parser.parse_args(args)
 
 
@@ -169,25 +174,27 @@ def main(argv):
     args = parse_cmdline(argv[1:])
     rsync_url, status, destination, storage_service = scraper.init(args)
     prometheus_client.start_http_server(args.metrics_port)
-    # First, clear out any existing cache that can be cleared.
-    with UPLOAD_RUNS.time():
-        # Upload except for the most recent day on disk.
-        retry.api.retry_call(scraper.upload_stale_disk,
-                             (args, status, destination, storage_service),
-                             exceptions=scraper.RecoverableScraperException)
-    # Now, download then upload forever.
+#    # First, clear out any existing cache that can be cleared.
+#    with UPLOAD_RUNS.time():
+#        # Upload except for the most recent day on disk.
+#        retry.api.retry_call(scraper.upload_stale_disk,
+#                             (args, status, destination, storage_service),
+#                             exceptions=scraper.RecoverableScraperException)
+#    # Now, download then upload forever.
     while True:
-        try:
-            logging.info('Scraping %s', rsync_url)
-            with RSYNC_RUNS.time():
-                scraper.download(args, rsync_url, status, destination)
-            with UPLOAD_RUNS.time():
-                scraper.upload_if_allowed(args, status, destination,
-                                          storage_service)
-            SCRAPER_SUCCESS.labels(message='success').inc()
-        except scraper.RecoverableScraperException as error:
-            logging.error('Scrape and upload failed: %s', error.message)
-            SCRAPER_SUCCESS.labels(message=str(error.prometheus_label)).inc()
+#        try:
+#            logging.info('Scraping %s', rsync_url)
+#            with RSYNC_RUNS.time():
+#                scraper.download(args, rsync_url, status, destination)
+#            with UPLOAD_RUNS.time():
+#                scraper.upload_if_allowed(args, status, destination,
+#                                          storage_service)
+#            SCRAPER_SUCCESS.labels(message='success').inc()
+#        except scraper.RecoverableScraperException as error:
+#            logging.error('Scrape and upload failed: %s', error.message)
+#            SCRAPER_SUCCESS.labels(message=str(error.prometheus_label)).inc()
+        if args.oneshot:
+            break
         # In order to prevent a thundering herd of rsync jobs, we spread the
         # jobs around in a memoryless way.  By choosing our inter-job sleep
         # time from an exponential distribution, we ensure that the resulting

@@ -24,6 +24,7 @@ port=7999
     ignore nonreadable = yes
 EOF
 rsync --daemon --address=127.0.0.1 --config=/tmp/rsyncd.conf
+echo 127.0.0.1 ndt.iupui.mlab4.xxx08.measurement-lab.org >> /etc/hosts
 sleep 5  # Lose the race condition with the datastore and rsync starts
 $(gcloud beta emulators datastore env-init)
 env
