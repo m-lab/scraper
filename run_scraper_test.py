@@ -101,18 +101,10 @@ class EndToEndWithFakes(unittest.TestCase):
 
         # Make the scratch space and delete it after
         self.dir = '/tmp/iupui_ndt/'
+        self.addCleanup(lambda: os.system('rm -Rf /tmp/iupui_ndt/*'))
+
         self.gcs = '/tmp/gcs/'
-        # pylint: disable=bare-except
-        try:
-            os.makedirs(self.dir)
-        except:
-            pass
-        try:
-            os.makedirs(self.gcs)
-        except:
-            pass
-        # pylint: enable=bare-except
-        self.addCleanup(lambda: shutil.rmtree('/tmp/iupui_ndt'))
+        os.makedirs(self.gcs)
         self.addCleanup(lambda: shutil.rmtree('/tmp/gcs'))
 
         # Patch credentials
@@ -145,6 +137,7 @@ class EndToEndWithFakes(unittest.TestCase):
                 return self.status
 
         surrounding_testcase = self
+
         class FakeRequest(object):
             def __init__(self, **kwargs):
                 self.index = -1
@@ -172,12 +165,8 @@ class EndToEndWithFakes(unittest.TestCase):
         self.file_index += 1
         subd = '%d/%02d/%02d/' % (filetime.year, filetime.month, filetime.day)
         fullpath = self.dir + subd
-        # pylint: disable=bare-except
-        try:
+        if not os.path.isdir(fullpath):
             os.makedirs(fullpath)
-        except:
-            pass
-        # pylint: enable=bare-except
         filename = filetime.strftime(fullpath + '%Y%m%dT%H:%M:%S.%fZ_.' +
                                      str(self.file_index))
         thefile = open(filename, 'w+')
