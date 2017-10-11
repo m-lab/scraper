@@ -233,6 +233,25 @@ class EndToEndWithFakes(unittest.TestCase):
         for time_slept in slept_seconds:
             self.assertLessEqual(time_slept, 3600)
 
+    @mock.patch('time.sleep')
+    def test_main_with_no_data(self, mock_sleep):
+        slept_seconds = []
+        mock_sleep.side_effect = slept_seconds.append
+
+        # Verify that the recoverable exception does not rise to the top level
+        run_scraper.main([
+            'run_as_e2e_test',
+            '--num_runs', '1',
+            '--rsync_host', 'ndt.iupui.mlab4.xxx08.measurement-lab.org',
+            '--rsync_module', 'iupui_ndt',
+            '--data_dir', '/scraper_data',
+            '--metrics_port', str(EndToEndWithFakes.prometheus_port),
+            '--max_uncompressed_size', '1024'])
+
+        # Verify that the sleep time is never too long
+        for time_slept in slept_seconds:
+            self.assertLessEqual(time_slept, 3600)
+
 
 if __name__ == '__main__':  # pragma: no cover
     unittest.main()
