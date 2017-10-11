@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO(https://github.com/m-lab/scraper/issues/9) end-to-end tests
-
 """This program runs the MLab scraper in a loop.
 
 run_scraper.py is intended to be the CMD for the docker container in which the
