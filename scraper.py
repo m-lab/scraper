@@ -620,7 +620,7 @@ def upload_tarfile(service, tgz_filename, date, experiment,
                 if progress:
                     logging.debug('Uploaded %d%%', 100.0 * progress.progress())
         logging.info('Upload to %s/%s complete!', bucket, name)
-    except googleapiclient.errors.HttpError as error:
+    except googleapiclient.errors.HttpError as error:  # pragma: no cover
         if (error.resp.status // 100) == 5:  # HTTP 500 is recoverable
             logging.warning('Recoverable error on upload: ' + str(error))
             raise RecoverableScraperException('upload', str(error))
