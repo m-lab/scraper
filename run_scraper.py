@@ -162,10 +162,10 @@ def parse_cmdline(args):
         default='mlab-storage-scraper-test',
         help='The Google Cloud Storage bucket to upload to')
     parser.add_argument(
-        '--oneshot',
-        default=False,
-        action='store_true',
-        help='Just download and upload once and then quit.')
+        '--num_runs',
+        default=float('inf'),
+        type=int,
+        help='Number of runs to perform (default is run forever)')
     return parser.parse_args(args)
 
 
@@ -180,8 +180,8 @@ def main(argv):
         retry.api.retry_call(scraper.upload_stale_disk,
                              (args, status, destination, storage_service),
                              exceptions=scraper.RecoverableScraperException)
-    # Now, download then upload forever.
-    while True:
+    # Now, download then upload until we run out of num_runs
+    while args.num_runs > 0:
         try:
             logging.info('Scraping %s', rsync_url)
             with RSYNC_RUNS.time():
@@ -206,8 +206,7 @@ def main(argv):
         logging.info('Sleeping for %g seconds', sleep_time)
         with SLEEPS.time():
             time.sleep(sleep_time)
-        if args.oneshot:
-            break
+        args.num_runs -= 1
 
 
 if __name__ == '__main__':  # pragma: no cover

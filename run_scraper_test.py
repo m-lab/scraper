@@ -18,8 +18,10 @@
 #
 # pylint: disable=missing-docstring, no-self-use, too-many-public-methods
 
+import datetime
 import os
 import shutil
+import tempfile
 import unittest
 
 import apiclient
@@ -66,7 +68,7 @@ class TestRunScraper(unittest.TestCase):
         self.assertEqual(args.rsync_binary, '/usr/bin/rsync')
         self.assertEqual(args.rsync_port, 7999)
         self.assertEqual(args.max_uncompressed_size, 1000000000)
-        self.assertFalse(args.oneshot)
+        self.assertEqual(args.num_runs, float('inf'))
 
     def test_args_help(self):
         with self.assertRaises(SystemExit):
@@ -88,18 +90,24 @@ class EmulatorCreds(google.auth.credentials.Credentials):
         raise RuntimeError('Should never be called.')
 
 
-PROMETHEUS_PORT = 9090
-
-
+# Nota bene: We can't use freezegun in the class because it hopelessly confuses
+# the emulated servers.
 class EndToEndWithFakes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        EndToEndWithFakes.prometheus_port = 9090
+        EndToEndWithFakes.prometheus_port = 9089
 
     def setUp(self):
-        os.makedirs('/tmp/iupui_ndt/2016/01/27')
-        os.makedirs('/tmp/iupui_ndt/2016/01/28')
-        os.makedirs('/tmp/iupui_ndt/2016/01/29')
+        EndToEndWithFakes.prometheus_port += 1
+
+        # Make the scratch space and delete it after
+        self.dir = '/tmp/iupui_ndt/'
+        try:
+            os.makedirs(self.dir)
+        except:
+            pass
+        self.addCleanup(lambda: shutil.rmtree('/tmp/iupui_ndt'))
+
         # Patch credentials
         creds_patcher = mock.patch.object(
             gce, 'AppAssertionCredentials',
@@ -122,43 +130,55 @@ class EndToEndWithFakes(unittest.TestCase):
         discovery_build_patcher.start()
         self.addCleanup(discovery_build_patcher.stop)
 
-    def tearDown(self):
-        shutil.rmtree('/tmp/iupui_ndt')
-        EndToEndWithFakes.prometheus_port += 1
+    def create_file(self, filetime):
+        """Make a 1k file in the right place with mtimes of the filetime."""
+        subd = '%d/%02d/%02d/' % (filetime.year, filetime.month, filetime.day)
+        fullpath = self.dir + subd
+        os.makedirs(fullpath)
+        fileprefix = filetime.strftime('%Y%m%dT%H:%M:%S.%fZ_')
+        thefile = tempfile.NamedTemporaryFile(prefix=fileprefix, dir=fullpath,
+                                              delete=False)
+        thefile.write('a' * 1024)
+
 
     @mock.patch('time.sleep')
     def test_main(self, _mock_sleep):
+        # Add old files for two days ago, yesterday, and today
+        self.create_file(datetime.datetime.now() - datetime.timedelta(days=2, hours=9))
+        self.create_file(datetime.datetime.now() - datetime.timedelta(days=1, hours=9))
+        self.create_file(datetime.datetime.now())
         run_scraper.main([
-            'run_as_e2e_test', '--oneshot',
+            'run_as_e2e_test',
+            '--num_runs', '1',
             '--rsync_host', 'ndt.iupui.mlab4.xxx08.measurement-lab.org',
             '--rsync_module', 'iupui_ndt',
             '--data_dir', '/scraper_data',
             '--metrics_port', str(EndToEndWithFakes.prometheus_port),
             '--max_uncompressed_size', '1024'])
+        # Verify that the storage service received the files
 
     @mock.patch.object(scraper, 'download')
     @mock.patch('time.sleep')
     def test_main_with_recoverable_failure(self, mock_sleep, mock_download):
+        slept_seconds = []
+        mock_sleep.side_effect = slept_seconds.append
+
         mock_download.side_effect = scraper.RecoverableScraperException(
             'fake_label', 'faked_exception')
 
-        slept_seconds = [0]
-
-        def fake_sleep(seconds):
-            slept_seconds[0] += seconds
-
-        mock_sleep.side_effect = fake_sleep
-
+        # Verify that the recoverable exception does not rise to the top level
         run_scraper.main([
             'run_as_e2e_test',
-            '--oneshot',
+            '--num_runs', '1',
             '--rsync_host', 'ndt.iupui.mlab4.xxx08.measurement-lab.org',
             '--rsync_module', 'iupui_ndt',
             '--data_dir', '/scraper_data',
             '--metrics_port', str(EndToEndWithFakes.prometheus_port),
             '--max_uncompressed_size', '1024'])
 
-        self.assertLessEqual(slept_seconds[0], 3600)
+        # Verify that the sleep time is never too long
+        for time_slept in slept_seconds:
+            self.assertLessEqual(time_slept, 3600)
 
 
 if __name__ == '__main__':  # pragma: no cover
