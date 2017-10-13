@@ -226,7 +226,7 @@ class EndToEndWithFakes(unittest.TestCase):
             '--metrics_port', str(EndToEndWithFakes.prometheus_port),
             '--max_uncompressed_size', '1024'])
 
-        # Verify that the storage service received the files
+        # Verify that the storage service received the file
         tgzfiles = os.listdir(self.cloud_upload_dir)
         self.assertEqual(len(tgzfiles), 1)
 
@@ -248,6 +248,7 @@ class EndToEndWithFakes(unittest.TestCase):
 
     @mock.patch('time.sleep')
     def test_main_with_no_data(self, mock_sleep):
+        now = datetime.datetime.now()
         slept_seconds = []
         mock_sleep.side_effect = slept_seconds.append
 
@@ -264,6 +265,20 @@ class EndToEndWithFakes(unittest.TestCase):
         # Verify that the sleep time is never too long
         for time_slept in slept_seconds:
             self.assertLessEqual(time_slept, 3600)
+
+        # Verify that cloud storage has been updated to midnight last night
+        datastore_client = datastore.Client()
+        key = datastore_client.key(
+            'dropboxrsyncaddress',
+            'rsync://ndt.iupui.mlab4.xxx08.measurement-lab.org'
+            ':7999/iupui_ndt')
+        value = datastore_client.get(key)
+        midnight = datetime.datetime(
+            year=now.year, month=now.month, day=now.day)
+        time_since_epoch = (midnight -
+                            datetime.datetime(1970, 1, 1)).total_seconds()
+        self.assertTrue(
+            abs(value['maxrawfilemtimearchived'] - time_since_epoch) < 5)
 
 
 if __name__ == '__main__':  # pragma: no cover
