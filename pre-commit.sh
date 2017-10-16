@@ -11,5 +11,4 @@ docker build . -f Dockerfile -t scraper
 docker build . -f TestDockerfile -t scrapertest
 # Keep the full-path filenames consistent inside and outside the container in an
 # effort to not confuse code coverage tools.
-docker run -v `pwd`:`pwd` -w `pwd` scrapertest ./git-hooks/python-pre-commit
-rm -f *.pyc
+docker run -v `pwd`:`pwd` -w `pwd` scrapertest ./run_tests_with_emulator.sh

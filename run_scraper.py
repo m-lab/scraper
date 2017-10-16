@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# TODO(https://github.com/m-lab/scraper/issues/9) end-to-end tests
-
 """This program runs the MLab scraper in a loop.
 
 run_scraper.py is intended to be the CMD for the docker container in which the
@@ -161,10 +159,15 @@ def parse_cmdline(args):
         type=str,
         default='mlab-storage-scraper-test',
         help='The Google Cloud Storage bucket to upload to')
+    parser.add_argument(
+        '--num_runs',
+        default=float('inf'),
+        type=int,
+        help='Number of runs to perform (default is run forever)')
     return parser.parse_args(args)
 
 
-def main(argv):  # pragma: no cover
+def main(argv):
     """Run scraper.py in an infinite loop."""
     args = parse_cmdline(argv[1:])
     rsync_url, status, destination, storage_service = scraper.init(args)
@@ -175,8 +178,8 @@ def main(argv):  # pragma: no cover
         retry.api.retry_call(scraper.upload_stale_disk,
                              (args, status, destination, storage_service),
                              exceptions=scraper.RecoverableScraperException)
-    # Now, download then upload forever.
-    while True:
+    # Now, download then upload until we run out of num_runs
+    while args.num_runs > 0:
         try:
             logging.info('Scraping %s', rsync_url)
             with RSYNC_RUNS.time():
@@ -195,12 +198,13 @@ def main(argv):  # pragma: no cover
         # distribution.  The denominator of the fraction in the code below is
         # the mean sleep time in seconds.
         #
-        # That said, don't sleep for more than two hours.
+        # That said, don't sleep for more than an hour.
         sleep_time = min(random.expovariate(1.0 / args.expected_wait_time),
-                         7200)
+                         3600)
         logging.info('Sleeping for %g seconds', sleep_time)
         with SLEEPS.time():
             time.sleep(sleep_time)
+        args.num_runs -= 1
 
 
 if __name__ == '__main__':  # pragma: no cover

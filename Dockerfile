@@ -5,7 +5,7 @@ RUN apk update
 RUN apk add python python-dev py2-pip gcc g++ libc-dev bash rsync tar
 # Install all the python requirements
 ADD requirements.txt /requirements.txt
-RUN pip install -q -r requirements.txt -U
+RUN pip install -r requirements.txt -U
 # Install scraper
 ADD scraper.py /scraper.py
 RUN chmod +x /scraper.py

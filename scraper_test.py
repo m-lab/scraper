@@ -35,7 +35,6 @@ import testfixtures
 import google.cloud.exceptions as cloud_exceptions
 # pylint: enable=no-name-in-module
 
-import run_scraper
 import scraper
 
 
@@ -53,38 +52,6 @@ class TestScraper(unittest.TestCase):
                 self.assertTrue(scraper.has_one_bit_set_or_is_zero(i), i)
             else:
                 self.assertFalse(scraper.has_one_bit_set_or_is_zero(i), i)
-
-    def test_args(self):
-        rsync_host = 'mlab1.dne0t.measurement-lab.org'
-        rsync_module = 'ndt'
-        data_dir = '/tmp/bigplaceforbackup'
-        rsync_binary = '/usr/bin/rsync'
-        rsync_port = 1234
-        max_uncompressed_size = 1024
-        args = run_scraper.parse_cmdline([
-            '--rsync_host', rsync_host, '--rsync_module', rsync_module,
-            '--data_dir', data_dir, '--rsync_binary', rsync_binary,
-            '--rsync_port', str(rsync_port), '--max_uncompressed_size',
-            str(max_uncompressed_size)
-        ])
-        self.assertEqual(args.rsync_host, rsync_host)
-        self.assertEqual(args.rsync_module, rsync_module)
-        self.assertEqual(args.data_dir, data_dir)
-        self.assertEqual(args.rsync_binary, rsync_binary)
-        self.assertEqual(args.rsync_port, rsync_port)
-        self.assertEqual(args.max_uncompressed_size, max_uncompressed_size)
-        args = run_scraper.parse_cmdline([
-            '--rsync_host', rsync_host, '--rsync_module', rsync_module,
-            '--data_dir', data_dir
-        ])
-        self.assertEqual(args.rsync_binary, '/usr/bin/rsync')
-        self.assertEqual(args.rsync_port, 7999)
-        self.assertEqual(args.max_uncompressed_size, 1000000000)
-
-    def test_args_help(self):
-        with self.assertRaises(SystemExit):
-            with testfixtures.OutputCapture() as _:
-                run_scraper.parse_cmdline(['-h'])
 
     @testfixtures.log_capture()
     def test_list_rsync_files(self):
@@ -548,13 +515,6 @@ class TestScraper(unittest.TestCase):
         self.assertEqual(patched_update_data.call_count, 1)
         self.assertEqual(type(patched_update_data.call_args[0][1]),
                          unicode)
-
-    def test_run_scraper_has_docstring(self):
-        # run_scraper should only be tested by end-to-end tests. However, by
-        # importing it above we can at least verify that it can be parsed by
-        # the python compiler.  Then, in order to not trigger the "unused
-        # import" linter message, we should verify something about run_scraper.
-        self.assertIsNotNone(run_scraper.__doc__)
 
     def test_timestamp_from_filename(self):
         self.assertEqual(
