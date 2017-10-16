@@ -114,21 +114,21 @@ class EndToEndWithFakes(unittest.TestCase):
             return_value=EmulatorCreds())
         creds_patcher.start()
         self.addCleanup(creds_patcher.stop)
-        fake_datastore_client = datastore.Client(project='mlab-sandbox',
-                                                 namespace='test',
-                                                 credentials=EmulatorCreds(),
-                                                 _http=requests.Session())
+        local_datastore_client = datastore.Client(project='mlab-sandbox',
+                                                  namespace='test',
+                                                  credentials=EmulatorCreds(),
+                                                  _http=requests.Session())
         # Make datastore clients connect to the local datastore emulator
         datastore_client_patcher = mock.patch.object(
-            datastore, 'Client', return_value=fake_datastore_client)
+            datastore, 'Client', return_value=local_datastore_client)
         datastore_client_patcher.start()
         self.addCleanup(datastore_client_patcher.stop)
 
         # Empty out the local datastore emulator.
-        query = fake_datastore_client.query(kind='dropboxrsyncaddress')
+        query = local_datastore_client.query(kind='dropboxrsyncaddress')
         entities = query.fetch()
         for entity in entities:
-            fake_datastore_client.delete(entity.key)
+            local_datastore_client.delete(entity.key)
 
         # Make an entirely mocked storage service
         self.mock_storage = mock.MagicMock()
