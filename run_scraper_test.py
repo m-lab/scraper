@@ -66,7 +66,7 @@ class TestRunScraper(unittest.TestCase):
         ])
         self.assertEqual(args.rsync_binary, '/usr/bin/rsync')
         self.assertEqual(args.rsync_port, 7999)
-        self.assertEqual(args.max_uncompressed_size, 1000000000)
+        self.assertEqual(args.max_uncompressed_size, 100000000)
         self.assertEqual(args.num_runs, float('inf'))
 
     def test_args_help(self):
@@ -190,7 +190,7 @@ class EndToEndWithFakes(unittest.TestCase):
     def test_main_breaks_up_big_tarfiles(self, _mock_sleep):
         # Add files for yesterday and today
         self.create_file(
-            datetime.datetime.now() - datetime.timedelta(days=1, hours=9))
+            datetime.datetime.now() - datetime.timedelta(days=1, hours=10))
         self.create_file(
             datetime.datetime.now() - datetime.timedelta(days=1, hours=9))
 
@@ -212,9 +212,9 @@ class EndToEndWithFakes(unittest.TestCase):
     @mock.patch('time.sleep')
     def test_main(self, _mock_sleep):
         # Add files for yesterday and today. Only yesterday should get uploaded.
-        self.create_file(
-            datetime.datetime.now() - datetime.timedelta(days=1, hours=9))
-        self.create_file(datetime.datetime.now())
+        now = datetime.datetime.now()
+        self.create_file(now - datetime.timedelta(days=1, hours=9))
+        self.create_file(now)
 
         # Should get one tarfile uploaded, because today's data is too new.
         run_scraper.main([
@@ -279,6 +279,44 @@ class EndToEndWithFakes(unittest.TestCase):
                             datetime.datetime(1970, 1, 1)).total_seconds()
         self.assertTrue(
             abs(value['maxrawfilemtimearchived'] - time_since_epoch) < 5)
+
+    @mock.patch('time.sleep')
+    def test_main_with_enough_data_for_early_upload(self, mock_sleep):
+        now = datetime.datetime.now()
+        slept_seconds = []
+        mock_sleep.side_effect = slept_seconds.append
+
+        # Add files for 1.1 hours ago and right now. Only the older should get
+        # uploaded.
+        now = datetime.datetime.now()
+        older = now - datetime.timedelta(minutes=66)
+        self.create_file(older)
+        self.create_file(now)
+
+        # Verify that the recoverable exception does not rise to the top level
+        run_scraper.main([
+            'run_as_e2e_test',
+            '--num_runs', '1',
+            '--rsync_host', 'ndt.iupui.mlab4.xxx08.measurement-lab.org',
+            '--rsync_module', 'iupui_ndt',
+            '--data_dir', '/scraper_data',
+            '--metrics_port', str(EndToEndWithFakes.prometheus_port),
+            '--max_uncompressed_size', '1024',
+            '--data_buffer_threshold', '1023'])
+
+        # Verify that cloud storage has been updated to 1.1 hours ago
+        datastore_client = datastore.Client()
+        key = datastore_client.key(
+            'dropboxrsyncaddress',
+            'rsync://ndt.iupui.mlab4.xxx08.measurement-lab.org'
+            ':7999/iupui_ndt')
+        value = datastore_client.get(key)
+        time_since_epoch = scraper.datetime_to_epoch(older)
+        self.assertEqual(value['maxrawfilemtimearchived'], time_since_epoch)
+
+        # Verify that the storage service received one file
+        tgzfiles = os.listdir(self.cloud_upload_dir)
+        self.assertEqual(len(tgzfiles), 1)
 
 
 if __name__ == '__main__':  # pragma: no cover

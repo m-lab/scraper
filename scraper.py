@@ -24,12 +24,12 @@ This program expects to be run on GCE and uses cloud APIs with the default
 credentials available to a GCE instance.
 """
 
+import collections
 import contextlib
 import datetime
 import logging
 import os
 import re
-import shutil
 import subprocess
 import tempfile
 
@@ -141,6 +141,9 @@ RSYNC_ARGS = ['-4', '-az', '--bwlimit=10000', '--timeout=300',
               '--contimeout=300', '--chmod=u=rwX']
 
 
+RemoteFile = collections.namedtuple('RemoteFile', ['filename', 'mtime'])
+
+
 @RSYNC_LIST_FILES_RUNS.time()
 def list_rsync_files(rsync_binary, rsync_url, destination):
     """Get a list of all files in the rsync module on the server.
@@ -156,7 +159,7 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
       destination: the directory to download to
 
     Returns:
-      a list of filenames
+      a list of RemoteFile objects
 
     Raises:
       RecoverableScraperException when rsync doesn't run successfully
@@ -171,6 +174,8 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     # extreme cases, mean that the socket times out and leaves the local scraper
     # rsync in a half-open state.
     #
+    # pylint: disable=line-too-long
+    #
     # Here is an example output from that command:
     #  opening tcp connection to ndt.iupui.mlab2.lba01.measurement-lab.org port
     #  7999
@@ -184,22 +189,28 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     #  [generator] expand file_list pointer array to 1048576 bytes, did move
     #  [receiver] expand file_list pointer array to 2097152 bytes, did move
     #  [generator] expand file_list pointer array to 2097152 bytes, did move
-    #  ./
-    #  2017/05/
-    #  2017/06/
-    #  2017/06/01/
-    #  2017/06/02/
-    #  2017/06/03/
-    #  2017/06/03/.gz is uptodate
-    #  2017/06/03/20170603T23:59:47.143624000Z_86.164.175.237.s2c_ndttrace.gz
-    #  2017/06/03/20170603T23:59:54.535055000Z_95.151.122.146:50901.meta
+    # 2017/10/12/20171012T22:09:14.480679000Z_mobile-166-172-63-50.mycingular.net:52559.meta is uptodate
+    # 2017/10/12/20171012T22:09:18.978633000Z_24-151-108-33.dhcp.nwtn.ct.charter.com:48820.cputime.gz is uptodate
+    # 2017/10/12/20171012T22:09:18.978633000Z_24-151-108-33.dhcp.nwtn.ct.charter.com:48820.meta is uptodate
+    # 2017/10/12/20171012T22:09:18.978633000Z_24-151-108-33.dhcp.nwtn.ct.charter.com:59812.s2c_snaplog.gz is uptodate
+    # [receiver] expand file_list pointer array to 524288 bytes, did move
+    # [generator] expand file_list pointer array to 524288 bytes, did move
+    # 2017/10/12/ 2017/10/13-08:51:08
+    # 2017/10/12/20171012T22:09:18.978633000Z_24.151.102017/10/12/20171012T22:09:14.480679000Z_mobile-166-172-63-50.mycingular.net:41160.c2s_snaplog.gz is uptodate
+    # 2017/10/12/20171012T22:09:24.837734000Z_24.152.248.171.c2s_ndttrace.gz 2017/10/12-22:09:38
+    # 2017/10/12/20171012T22:09:24.837734000Z_24.152.248.171.res-cmts.tvh.ptd.net:55683.cputime.gz 2017/10/12-22:09:38
+    # 2017/10/12/20171012T22:09:24.837734000Z_24.152.248.171.res-cmts.tvh.ptd.net:55683.meta 2017/10/12-22:09:38
     # [snip]
     # The lines with [generator] and [receiver] may happen at any point in the
     # output.
+    #
+    # pylint: enable=line-too-long
 
     # -n causes the whole thing to run in dry-run mode
     # -vv causes the debug output which we parse
-    command = ([rsync_binary, '-n', '-vv'] +
+    # -out-format causes the output to be the filename, then a space, then the
+    #             mtime of the file in question.
+    command = ([rsync_binary, '-n', '-vv', '--out-format', '%n %M'] +
                RSYNC_ARGS +
                [rsync_url, destination])
     logging.info('Listing files on server with the command: %s',
@@ -208,8 +219,11 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
                                stderr=subprocess.PIPE)
     files = []
     # Only download things that are files and that respect the date-based
-    # directory structure.
-    files_regex = re.compile(r'^\d{4}/\d\d/\d\d/.*[^/]$')
+    # directory structure, on lines that end with a conforming timestamp.
+    timestamp_re_str = r'\d{4}/\d\d/\d\d-\d\d:\d\d:\d\d'
+    files_regex = re.compile(r'^\d{4}/\d\d/\d\d/.*[^/]' + ' ' +
+                             timestamp_re_str +
+                             '$')
     line_count = 0
     for line in process.stdout:
         # Count output lines independently from files found.
@@ -221,12 +235,20 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
         # Don't re-sync files that are already in sync.
         if line.endswith(' is uptodate'):
             continue
-        # If it looks like a file, add it to our list.
+        # If it looks like a file and isn't uptodate, add it to our list.
         if files_regex.match(line):
-            files.append(line)
+            # The split and strptime are safe because the line matched the
+            # files_regex.
+            filename, timestamp_str = line.rsplit(' ', 1)
+            timestamp = datetime.datetime.strptime(timestamp_str,
+                                                   '%Y/%m/%d-%H:%M:%S')
+            files.append(RemoteFile(filename, timestamp))
             # Logging that decreases exponentially over time.
             if has_one_bit_set_or_is_zero(len(files)):
                 logging.info('Found %d files to download so far', len(files))
+        else:
+            logging.debug('LINE does not match %s: "%s"',
+                          files_regex.pattern, line)
     logging.info('Found %d files to download in total', len(files))
     process.wait()
     logging.info('rsync process exited with code %d', process.returncode)
@@ -244,37 +266,24 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     return files
 
 
-def remove_older_files(date, files):
+def remove_older_files(high_water_mark, files):
     """Yields all well-formed filenames newer than `date`.
 
     Args:
-      date: the date of the last day to remove from consideration
-      files: the list of filenames
+      high_water_mark: the datetime specifying when data is too old
+      files: a list of RemoteFile objects
 
     Yields:
-      a sequence of filenames
+      a sequence of RemoteFile objects
     """
-    for fname in files:
-        if fname.count('/') < 3:
-            logging.info('Ignoring %s (if it is a directory, the directory '
-                         'contents will still be examined)', fname)
+    for remote_file in files:
+        if remote_file.filename.count('/') < 3:
+            logging.info(
+                'Ignoring %s (if it is a directory, the directory '
+                'contents will still be examined)', remote_file.filename)
             continue
-        year, month, day, _ = fname.split('/', 3)
-        if not (year.isdigit() and month.isdigit() and day.isdigit()):
-            logging.error(
-                'Bad filename. Was supposed to be YYYY/MM/DD, but was %s',
-                fname)
-            continue
-        try:
-            # Pass in a radix to guard against zero-padded 8 and 9.
-            year = int(year, 10)
-            month = int(month, 10)
-            day = int(day, 10)
-            if datetime.date(year, month, day) > date:
-                yield fname
-        except ValueError as verr:
-            logging.warning('Bad filename (%s) caused bad date: %s', fname,
-                            verr)
+        if remote_file.mtime > high_water_mark:
+            yield remote_file
 
 
 # Download files 1000 at a time to help keep rsync memory usage low.
@@ -292,10 +301,12 @@ def download_files(rsync_binary, rsync_url, files, destination):
     Args:
       rsync_binary: The full path to `rsync`
       rsync_url: The url from which to retrieve the files
-      files: an iterable of filenames to retrieve
+      files: an iterable of RemoteFile objects to retrieve
       destination: the directory on the local host to put the files
     """
-    files = list(files)
+    # Dates are no longer needed, and we need to iterate over the sequence of
+    # filenames multiple times.
+    files = [remote.filename for remote in files]
     if not files:
         logging.info('No files to be downloaded from %s', rsync_url)
         return
@@ -330,19 +341,20 @@ def download_files(rsync_binary, rsync_url, files, destination):
     logging.info('sync completed successfully from %s', rsync_url)
 
 
-def max_new_archived_date():
-    """The most recent date that we could consider "old enough" to upload.
+def max_new_archived_datetime():
+    """The most recent datetime that we could consider "old enough" to upload.
 
-    8 hours after midnight, we will assume that no tests from the previous
-    day could possibly have failed to be written to disk.  So this should
-    always be either yesterday or the day before, depending on how late
-    in the day it is.
+    8 hours after midnight, we will assume that no tests from the previous day
+    could possibly have failed to be written to disk.  So this should always be
+    one second before midnight either yesterday or the day before, depending on
+    how late in the day it is.
 
     Returns:
-      The most recent day whose data is safe to upload.
+        The most recent datetime before which data is safe to upload.
     """
-    return (datetime.datetime.utcnow() - datetime.timedelta(
+    day = (datetime.datetime.utcnow() - datetime.timedelta(
         days=1, hours=8)).date()
+    return datetime.datetime(day.year, day.month, day.day, 23, 59, 59)
 
 
 def datetime_to_epoch(datetime_value):
@@ -385,10 +397,9 @@ def find_all_days_to_upload(localdir, candidate_last_archived_date):
                 # Make sure to specify radix 10 to prevent an octal
                 # interpretation of 0-padded single digits 08 and 09.
                 try:
-                    date = datetime.date(
-                        year=int(year, 10),
-                        month=int(month, 10),
-                        day=int(day, 10))
+                    date = datetime.datetime(
+                        int(year, 10), int(month, 10), int(day, 10),
+                        23, 59, 59)
                     if date <= candidate_last_archived_date:
                         yield date
                 except ValueError as verr:
@@ -466,109 +477,104 @@ def node_and_site(host):
     return (names[-4], names[-3])
 
 
-def all_files(directory):
-    """Lists all files in all subdirectories beneath the current dir."""
+LocalBufferedFile = collections.namedtuple('LocalBufferedFile',
+                                           ['filename', 'mtime', 'size'])
+
+
+def all_files(directory, high_water_mark, too_recent_timestamp):
+    """Lists all files and mtimes in all subdirectories.
+
+    Ensures that the mtime of the file is between the two timestamps.
+
+    Yields:
+        a sequence of LocalBufferedFile objects
+    """
+    high_water_mark = datetime_to_epoch(high_water_mark)
+    too_recent_timestamp = datetime_to_epoch(too_recent_timestamp)
     for root, _dirs, files in os.walk(directory):
         for filename in files:
-            yield os.path.join(root, filename)
+            fullname = os.path.join(root, filename)
+            stat = os.stat(fullname)
+            mtime = stat.st_mtime
+            size = stat.st_size
+            if high_water_mark < mtime <= too_recent_timestamp:
+                yield LocalBufferedFile(fullname, mtime, size)
 
 
-def timestamp_from_filename(filename):
-    """Turns a filename into a timestamp or None.
+class TarfileTemplate(object):
+    """A template for tarfile filenames."""
 
-    Filenames are strings like:
-      2017/05/10/20170510T15:05:01.520348000Z_12.30.237.162.c2s_ndttrace
+    def __init__(self, tarfile_directory, node, site, experiment):
+        self.tarfile_directory = tarfile_directory
+        self.node = node
+        self.site = site
+        self.experiment = experiment
 
-    and the associated timestamp for that filename is:
-      datetime.datetime(2017, 5, 10, 15, 5, 1.520348000)
-    """
-    basename = os.path.basename(filename)
-    timestamp_regex = re.compile(
-        r'^(\d{4})(\d\d)(\d\d)T(\d\d):(\d\d):(\d\d)\.(\d{6})')
-    #         1      2    3      4      5      6        7
-    #       year   month day   hour  minutes seconds microseconds
-    match = timestamp_regex.match(basename)
-    if match is None:
-        return None
-    else:
-        return datetime.datetime(int(match.group(1), 10),
-                                 int(match.group(2), 10),
-                                 int(match.group(3), 10),
-                                 int(match.group(4), 10),
-                                 int(match.group(5), 10),
-                                 int(match.group(6), 10),
-                                 int(match.group(7), 10))
+    def create_filename(self, mtime):
+        """Create a filename for a particular time using the template."""
+        mtime = datetime.datetime.utcfromtimestamp(mtime)
+        return ('{directory}/{year:04d}{month:02d}{day:02d}T'
+                '{hour:02d}{minute:02d}{second:02d}Z'
+                '-{node}-{site}-{experiment}-0000.tgz').format(
+                    directory=self.tarfile_directory,
+                    year=mtime.year, month=mtime.month, day=mtime.day,
+                    hour=mtime.hour, minute=mtime.minute, second=mtime.second,
+                    node=self.node, site=self.site, experiment=self.experiment)
 
 
-def create_tarfilename_template(day, node, site, experiment, tarfile_directory):
-    """Create a template tarfile name from the passed-in values.
-
-    Tarfile names look like:
-      '20150706T000000Z-mlab1-acc01-ndt-0000.tgz'
-
-    Where the final 0000 is a counter for the tarfiles for that site for that
-    day, which means that for that file this function would return the template:
-      '20150706T000000Z-mlab1-acc01-ndt-%04d.tgz'
-    """
-    filename_prefix = '%d%02d%02dT000000Z-%s-%s-%s-' % (
-        day.year, day.month, day.day, node, site, experiment)
-    filename_suffix = '.tgz'
-    return os.path.join(tarfile_directory,
-                        filename_prefix + '%04d' + filename_suffix)
-
-
-def create_temporary_tarfiles(tar_binary, tarfile_template, directory, day,
-                              max_uncompressed_size):
+def create_temporary_tarfiles(tar_binary, tarfile_template, directory,
+                              early_time, late_time, max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
 
-    Because one day may contain a lot of data, we create a series of tarfiles,
-    none of which may contain more than max_uncompressed_size buytes of data.
-    Upon resumption, remove the tarfile that was created.
+    Creates appropriately-sized tarfiles for each time period.
 
     Args:
       tar_binary: the full pathname for the tar binary
       tarfile_template: a string to serve as the tarfile filename template
       directory: the directory at the root of the file hierarchy
-      day: the date for the tarfile
+      early_time: the time before which we should ignore files
+      late_time: the time after which we should ignore files
       max_uncompressed_size: the max size of an individual tarfile
 
     Yields:
-      A tuple of the name of the tarfile created, the most recent mtime of
-      any tarfile's component files, and the number of files in the tarfile
+      A tuple of the name of the tarfile created, the oldest mtime of the
+      tarfile's component files, the newest mtime of any tarfile's component
+      files, and the number of files in the tarfile.  Also, it creates the
+      tarfile, and then deletes it after the yield resumes.
     """
-    day_dir = '%d/%02d/%02d' % (day.year, day.month, day.day)
-    tarfile_size = 0
-    tarfile_files = []
-    tarfile_index = 0
-    max_mtime = 0
-    prev_timestamp = None
     with chdir(directory):
-        for filename in sorted(all_files(day_dir)):
-            file_timestamp = timestamp_from_filename(filename)
-            filestat = os.stat(filename)
-            filesize = filestat.st_size
-            max_mtime = max(max_mtime, int(filestat.st_mtime))
+        tarfile_size = 0
+        tarfile_files = []
+        tarfile_index = 0
+        min_mtime = float('inf')
+        max_mtime = 0
+        prev_timestamp = None
+
+        for local_file in sorted(all_files('.', early_time, late_time),
+                                 cmp=lambda x, y: cmp(x.mtime, y.mtime)):
             if (tarfile_files and
-                    tarfile_size + filesize > max_uncompressed_size and
-                    (file_timestamp is None or
-                     file_timestamp != prev_timestamp)):
-                tarfile_name = tarfile_template % tarfile_index
+                    tarfile_size + local_file.size > max_uncompressed_size and
+                    local_file.mtime != prev_timestamp):
+                tarfile_name = tarfile_template.create_filename(min_mtime)
                 create_tarfile(tar_binary, tarfile_name, tarfile_files)
                 logging.info('Created local file %s', tarfile_name)
-                yield tarfile_name, max_mtime, len(tarfile_files)
+                yield tarfile_name, min_mtime, max_mtime, len(tarfile_files)
                 os.remove(tarfile_name)
                 logging.info('Removed local file %s', tarfile_name)
                 tarfile_files = []
                 tarfile_size = 0
                 tarfile_index += 1
-            tarfile_files.append(filename)
-            tarfile_size += filesize
-            prev_timestamp = file_timestamp
+                min_mtime = local_file.mtime
+            tarfile_files.append(local_file.filename)
+            tarfile_size += local_file.size
+            prev_timestamp = local_file.mtime
+            min_mtime = min(local_file.mtime, min_mtime)
+            max_mtime = max(local_file.mtime, max_mtime)
         if tarfile_files:
-            tarfile_name = tarfile_template % tarfile_index
+            tarfile_name = tarfile_template.create_filename(min_mtime)
             create_tarfile(tar_binary, tarfile_name, tarfile_files)
             logging.info('Created local file %s', tarfile_name)
-            yield tarfile_name, max_mtime, len(tarfile_files)
+            yield tarfile_name, min_mtime, max_mtime, len(tarfile_files)
             os.remove(tarfile_name)
             logging.info('Removed local file %s', tarfile_name)
 
@@ -629,35 +635,37 @@ def upload_tarfile(service, tgz_filename, date, experiment,
             raise NonRecoverableScraperException('upload', str(error))
 
 
-def remove_datafiles(directory, day):
-    """Removes datafiles for a given day from the local disk.
+def delete_datafiles_up_to(directory, max_mtime):
+    """Removes files with an mtime before a given datetime from the local disk.
 
     Prunes any empty subdirectories that it creates.
     """
-    day_dir = '%02d' % day.day
-    month_dir = '%02d' % day.month
-    year_dir = '%d' % day.year
-    with chdir(directory):
-        with chdir(year_dir):
-            with chdir(month_dir):
-                shutil.rmtree(day_dir)
-            if not os.listdir(month_dir):
-                os.rmdir(month_dir)
-        if not os.listdir(year_dir):
-            os.rmdir(year_dir)
+    for root, dirs, files in os.walk(directory, topdown=False):
+        # Delete too-old files
+        for filename in files:
+            fullname = os.path.join(root, filename)
+            stat = os.stat(fullname)
+            mtime = stat.st_mtime
+            if mtime <= max_mtime:
+                logging.debug('Removing old file %s', fullname)
+                os.remove(fullname)
+        # Delete empty directories
+        for dirname in dirs:
+            fulldir = os.path.join(root, dirname)
+            if not os.listdir(fulldir):
+                logging.debug('Removing empty directory %s', fulldir)
+                os.rmdir(fulldir)
 
 
-def xdate_to_date_or_die(xdate_text):
-    """Converts a string of the form 'x2016-01-28' into a date."""
+def mtime_to_date_or_die(mtime_text):
+    """Convert a spreadsheet cell timestamp to a datetime or die trying."""
     try:
-        assert xdate_text.count('-') == 2 and xdate_text[0] == 'x'
-        year, month, day = xdate_text[1:].split('-')
-        assert year.isdigit() and month.isdigit() and day.isdigit()
-        return datetime.date(int(year, 10), int(month, 10), int(day, 10))
-    except (AssertionError, ValueError):
-        message = 'Bad date string: "%s"' % xdate_text
+        mtime = int(mtime_text)
+        return datetime.datetime.utcfromtimestamp(mtime)
+    except ValueError:
+        message = 'Bad mtime: "%s"' % mtime_text
         logging.error(message)
-        raise NonRecoverableScraperException('bad_date', message)
+        raise NonRecoverableScraperException('bad_mtime', message)
 
 
 class SyncStatus(object):
@@ -682,7 +690,7 @@ class SyncStatus(object):
 
     Failure to update the rsync cloud datastore cell would mean that data would
     build up on the nodes and the data deletion service would not know it could
-    delete uploaded data.  If a rogue process updated the cloud datastore cell,
+    delete max_mtime data.  If a rogue process updated the cloud datastore cell,
     then the node might delete data that had not yet been uploaded to the right
     cloud datastore bucket.
     """
@@ -712,8 +720,9 @@ class SyncStatus(object):
             self._key = self._client.key(SyncStatus.RSYNC_KEY, self._rsync_url)
         return self._client.get(self._key)
 
-    def get_last_archived_date(self, default_date=datetime.date(2009, 1, 1)):
-        """Returns the most recent date from which we have all the data.
+    def get_last_archived_mtime(
+            self, default_datetime=datetime.datetime(2009, 1, 1, 0, 0, 0)):
+        """Returns the most recent mtime before which we have all the data.
 
         Used to determine what local data on a node has been archived and is
         safe to delete, and also what data must be downloaded from a node, and
@@ -721,19 +730,19 @@ class SyncStatus(object):
         cases, this quantity must must be monotonically increasing.
 
         Args:
-          default_date: the date to return if no datastore entry exists
+          default_datetime: the time to return if no datastore entry exists
         """
-        value = self.get_data()
-        if not value:
+        data = self.get_data()
+        if not data:
             logging.info('No data found in the datastore')
-            return default_date
-        elif (SyncStatus.COLLECTION_KEY not in value or
-              not value[SyncStatus.COLLECTION_KEY]):
-            logging.info('Data in the datastore had no %s',
-                         SyncStatus.COLLECTION_KEY)
-            return default_date
+            return default_datetime
+        elif (SyncStatus.MTIME_KEY not in data or
+              not data[SyncStatus.MTIME_KEY]):
+            logging.info('Data in the datastore had no %s, returning %s',
+                         SyncStatus.MTIME_KEY, default_datetime)
+            return default_datetime
         else:
-            return xdate_to_date_or_die(value[SyncStatus.COLLECTION_KEY])
+            return mtime_to_date_or_die(data[SyncStatus.MTIME_KEY])
 
     # Retry required until
     # https://github.com/GoogleCloudPlatform/google-cloud-python/issues/2694
@@ -832,36 +841,26 @@ def init(args):
     return (rsync_url, status, destination, storage_service)
 
 
-def remove_too_recent_files(filelist):
-    """Removes all files which have a too-recent timestamp in their filename.
+def remove_too_recent_files(filelist,
+                            quiescence_period=datetime.timedelta(minutes=15)):
+    """Removes all files which have a too-recent mtime.
 
-    For NDT in particular, files with very recent timestamps may be files in the
-    process of being created.  Some of the files that NDT creates, it
-    subsequently gzips and deletes the originals.  Disappearing files causes
-    rsync to freak out, so let's sidestep the problem by ensuring that if there
-    is a timestamp in the filename, then the file will be ignored until the
-    timestamp is sufficiently far in the past that we can be relatively
-    confident that the file won't disappear on us.
+    Args:
+      filelist: a list of RemoteFile objects
+      quiescence_period: a timedelta specifying how recent is "too recent"
 
-    Note that this algorithm does a classically bad thing: it depends on clocks
-    in a distributed system.  However, depending on clocks with a 15-minute
-    granularity feels lower-risk than the classic problems that drove Lamport to
-    create vector clocks.
+    Yields:
+      a sequence of RemoteFile objects
     """
-    not_too_recent = []
-    border = datetime.datetime.utcnow() - datetime.timedelta(minutes=15)
-    for name in filelist:
-        timestamp = timestamp_from_filename(name)
-        if timestamp is None:
-            # When we can't determine the time, append the file.
-            not_too_recent.append(name)
-        elif timestamp < border:
+    border = datetime.datetime.utcnow() - quiescence_period
+    for remote_file in filelist:
+        if remote_file.mtime < border:
             # If the file is not too new, append the file
-            not_too_recent.append(name)
+            yield remote_file
         else:
             # There is a timestamp, but the file is too new.
-            logging.debug('%s is too recent a file to download', name)
-    return not_too_recent
+            logging.debug('%s is too recent a file to download',
+                          remote_file.filename)
 
 
 def download(args, rsync_url, sync_status, destination):
@@ -871,23 +870,51 @@ def download(args, rsync_url, sync_status, destination):
     list and download the files from the server.
     """
     sync_status.update_last_collection()
-    last_archived_date = sync_status.get_last_archived_date()
+    high_water_mark = sync_status.get_last_archived_mtime()
     all_remote_files = list_rsync_files(args.rsync_binary, rsync_url,
                                         destination)
-    newer_files = remove_older_files(last_archived_date, all_remote_files)
+    newer_files = remove_older_files(high_water_mark, all_remote_files)
     stable_files = remove_too_recent_files(newer_files)
     download_files(args.rsync_binary, rsync_url, stable_files, destination)
 
 
+def upload_is_recommended(high_water_mark, too_recent_boundary,
+                          data_buffer_threshold, directory):
+    """Returns whether we have enough data buffered to upload eagerly."""
+    total = 0
+    for local_file in all_files(directory, high_water_mark,
+                                too_recent_boundary):
+        total += local_file.size
+    return total > data_buffer_threshold
+
+
 def upload_if_allowed(args, sync_status, destination, storage_service):
-    """If enough time has passed, upload old data to GCS."""
-    upload_up_to_date(args, sync_status, destination, storage_service,
-                      max_new_archived_date())
+    """If enough time or data has accrued, upload.
+
+    Data that is newer than the high water mark will be uploaded either starting
+    at 8 am UTC the following day, or earlier than that if there is more data
+    than the data buffer threshold that was created at least data wait time in
+    the past.
+    """
+    # Check if there is too much data in the relevant time range.
+    high_water_mark = sync_status.get_last_archived_mtime()
+    most_recent_allowable_mtime = datetime.datetime.now() - args.data_wait_time
+    if upload_is_recommended(high_water_mark, most_recent_allowable_mtime,
+                             args.data_buffer_threshold, destination):
+        logging.info('Uploading early due to data volume')
+        upload_up_to_date(args, sync_status, destination, storage_service,
+                          most_recent_allowable_mtime)
+    else:
+        # Even if we don't have too much data, do check if we should upload
+        # yesterday's data.
+        upload_up_to_date(args, sync_status, destination, storage_service,
+                          max_new_archived_datetime())
 
 
 def upload_stale_disk(args, sync_status, destination, storage_service):
     """Upload all data from the disk where we also have the next day's data."""
-    days = list(find_all_days_to_upload(destination, max_new_archived_date()))
+    days = list(find_all_days_to_upload(destination,
+                                        max_new_archived_datetime()))
     if len(days) <= 1:
         logging.info('No stale data found')
         return
@@ -915,49 +942,55 @@ def day_of_week(day):
 
 def upload_up_to_date(args, sync_status, destination,
                       storage_service,
-                      candidate_last_archived_date):
+                      candidate_last_archived_mtime):
     """Tar and upload local data.
 
     Tar up what we have for each unarchived day that is sufficiently in the past
     (up to and including the candidate_last_archived_date), upload what we have,
     and delete the local copies of all successfully-uploaded data.
     """
+    logging.info('Uploading all data prior to %s',
+                 candidate_last_archived_mtime)
     max_mtime = None
-    for day in find_all_days_to_upload(destination,
-                                       candidate_last_archived_date):
-        max_mtime = None
-        node, site = node_and_site(args.rsync_host)
-        tarfile_template = create_tarfilename_template(day, node, site,
-                                                       args.rsync_module,
-                                                       args.tarfile_directory)
-        total_daily_files = 0
-        for tgz_filename, max_mtime, num_files in create_temporary_tarfiles(
-                args.tar_binary, tarfile_template, destination, day,
-                args.max_uncompressed_size):
-            upload_tarfile(storage_service, tgz_filename, day,
-                           args.rsync_module, args.bucket)
-            total_daily_files += num_files
-            BYTES_UPLOADED.labels(bucket=args.bucket).inc(
-                os.stat(tgz_filename).st_size)
+    node, site = node_and_site(args.rsync_host)
+    tarfile_template = TarfileTemplate(args.tarfile_directory,
+                                       node, site, args.rsync_module)
+    earliest_time = sync_status.get_last_archived_mtime()
+    total_daily_files = 0
+    for (tgz_filename,
+         min_mtime,
+         max_mtime,
+         num_files) in create_temporary_tarfiles(args.tar_binary,
+                                                 tarfile_template,
+                                                 destination,
+                                                 earliest_time,
+                                                 candidate_last_archived_mtime,
+                                                 args.max_uncompressed_size):
+        upload_tarfile(storage_service, tgz_filename,
+                       datetime.datetime.utcfromtimestamp(min_mtime),
+                       args.rsync_module, args.bucket)
+        total_daily_files += num_files
+        BYTES_UPLOADED.labels(bucket=args.bucket).inc(
+            os.stat(tgz_filename).st_size)
+    if max_mtime is not None:
         # The FILES_UPLOADED count should only be incremented once we are
         # confident that we won't re-upload all the files. Therefore, update it
         # immediately before or after we call update_last_archived_date().
+        max_mtime_datetime = datetime.datetime.utcfromtimestamp(max_mtime)
         FILES_UPLOADED.labels(
             rsync_host_module='%s-%s-%s' % (node, site, args.rsync_module),
-            day_of_week=day_of_week(day)).inc(total_daily_files)
-        sync_status.update_last_archived_date(day)
-        if max_mtime is not None:
-            sync_status.update_mtime(max_mtime)
-        remove_datafiles(destination, day)
-    if max_mtime is None:
+            day_of_week=day_of_week(max_mtime_datetime)).inc(total_daily_files)
+        sync_status.update_last_archived_date(max_mtime_datetime)
+        sync_status.update_mtime(max_mtime)
+        delete_datafiles_up_to(destination, max_mtime)
+    else:
         # The last archived date indicates the date with which we are finished.
         # Therefore, the high water mark should be equal to the last possible
         # high water mark of the day, assuming there was no data that day.
-        datetime_value = datetime.datetime(candidate_last_archived_date.year,
-                                           candidate_last_archived_date.month,
-                                           candidate_last_archived_date.day)
-        sync_status.update_mtime(
-            datetime_to_epoch(datetime_value +
-                              datetime.timedelta(hours=23, minutes=59,
-                                                 seconds=59)))
+        datetime_value = datetime.datetime(candidate_last_archived_mtime.year,
+                                           candidate_last_archived_mtime.month,
+                                           candidate_last_archived_mtime.day,
+                                           23, 59, 59)
+        sync_status.update_mtime(datetime_to_epoch(datetime_value))
+        sync_status.update_last_archived_date(datetime_value)
     sync_status.update_debug_message('')
