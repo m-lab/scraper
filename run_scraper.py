@@ -179,11 +179,11 @@ def parse_cmdline(args):
         help='Number of runs to perform (default is run forever)')
     parser.add_argument(
         '--data_wait_time',
-        default=datetime.timedelta(seconds=3600),
+        default=datetime.timedelta(seconds=7200),
         type=lambda x: datetime.timedelta(seconds=int(x)),
         help='The minimum age of the most recent modification before we are '
         'willing to consider a file eligible for upload.  '
-        'Default is 3600 (an hour).')
+        'Default is 7200 (two hours).')
     parser.add_argument(
         '--data_buffer_threshold',
         default=100 * 1000 * 1000,

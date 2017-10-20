@@ -289,7 +289,7 @@ class EndToEndWithFakes(unittest.TestCase):
         # Add files for 1.1 hours ago and right now. Only the older should get
         # uploaded.
         now = datetime.datetime.now()
-        older = now - datetime.timedelta(minutes=66)
+        older = now - datetime.timedelta(minutes=126)
         self.create_file(older)
         self.create_file(now)
 
