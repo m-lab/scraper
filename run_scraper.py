@@ -20,9 +20,22 @@ scraper runs.  By default, run-scraper will try to scrape the given target every
 half an hour (on average, but with exponential jitter to assure a memoryless
 distribution of runtimes).  run-scraper reports its status both via logging
 messages and a Prometheus metrics port.
+
+This program keeps a high water mark for the rsync endpoint, and no data that is
+older than the high water mark will be downloaded or uploaded.  It also has two
+constants that determine its upload schedule: the data buffer threshold, and the
+data wait time.  The buffer threshold is a quantity of bytes, and the data wait
+time is a time duration.
+
+Data that is newer than the high water mark will be uploaded either starting at
+8 am UTC the following day, or earlier than that if there is more data than the
+data buffer threshold that was created at least data wait time in the past.  On
+upload, the high water mark is set to the maximum mtime of all uploaded files,
+and all files with mtimes before then are deleted from the buffer.
 """
 
 import argparse
+import datetime
 import logging
 import random
 import sys
@@ -143,10 +156,10 @@ def parse_cmdline(args):
         '--max_uncompressed_size',
         metavar='SIZE',
         type=int,
-        default=1000000000,
+        default=100 * 1000 * 1000,
         required=False,
         help='The maximum number of bytes in an uncompressed tarfile (default '
-        'is 1,000,000,000 = 1 GB)')
+        'is 100,000,000 = 100 MB)')
     parser.add_argument(
         '--tarfile_directory',
         metavar='DIRECTORY',
@@ -164,6 +177,19 @@ def parse_cmdline(args):
         default=float('inf'),
         type=int,
         help='Number of runs to perform (default is run forever)')
+    parser.add_argument(
+        '--data_wait_time',
+        default=datetime.timedelta(seconds=7200),
+        type=lambda x: datetime.timedelta(seconds=int(x)),
+        help='The minimum age of the most recent modification before we are '
+        'willing to consider a file eligible for upload.  '
+        'Default is 7200 (two hours).')
+    parser.add_argument(
+        '--data_buffer_threshold',
+        default=100 * 1000 * 1000,
+        type=int,
+        help='The volume of data (in bytes) past which we might trigger an '
+        'eager upload.  Default is 100MB.')
     return parser.parse_args(args)
 
 
