@@ -502,7 +502,12 @@ def all_files(directory, high_water_mark, too_recent_timestamp):
 
 
 class TarfileTemplate(object):
-    """A template for tarfile filenames."""
+    """A template for tarfile filenames.
+
+    Each tarfile name should uniquely identify the mlab node, experiment, and
+    timestamp for the contained data.  Changes to the existing name scructure
+    should be coordinated with the pipeline code.
+    """
 
     def __init__(self, tarfile_directory, node, site, experiment):
         self.tarfile_directory = tarfile_directory
@@ -511,7 +516,14 @@ class TarfileTemplate(object):
         self.experiment = experiment
 
     def create_filename(self, mtime):
-        """Create a filename for a particular time using the template."""
+        """Create a filename for a particular time using the template.
+
+        The -0000 suffix to the basename has been left in as a thing to keep
+        during the transition period from daily scraper to a more frequent one.
+        This code assumes that no two files with the same timestamp will ever
+        end up in separate tarfiles, which is a restriction that
+        create_temporary_tarfiles enforces.
+        """
         mtime = datetime.datetime.utcfromtimestamp(mtime)
         return ('{directory}/{year:04d}{month:02d}{day:02d}T'
                 '{hour:02d}{minute:02d}{second:02d}Z'
@@ -526,7 +538,22 @@ def create_temporary_tarfiles(tar_binary, tarfile_template, directory,
                               early_time, late_time, max_uncompressed_size):
     """Create tarfiles, and yield the name of each tarfile as it is made.
 
-    Creates appropriately-sized tarfiles for each time period.
+    Creates appropriately-sized tarfiles for each time period.  All files with
+    the same timestamp will be put in the same tarfile, so the tarfiles may be
+    bigger than the max_uncompressed_size if more than max_uncompressed_size
+    data is written in a single second.
+
+    It is difficult to imagine more than max_uncompressed_size bytes of data
+    being written to disk every second.  Each NDT test seems to cause a few (3?
+    5?) megabytes of data to be written.  An NDT testing rate that causes in
+    excess of 50MB/sec (50MB is the current deployed value) would be 10+ tests
+    being initiated every second, which corresponds to more than of 100 tests
+    being run simultaneously.  This could happen, but is unlikely.  Even more,
+    the number 50MB is chosen pretty roughly - nothing would break if files
+    became e.g. 1GB, but the parsing process would run a little less smoothly.
+    If we are regularly getting more than 1GB per second, then scraper can't
+    keep up with the load, even in the most aggressive "download, upload early,
+    and delete" scenario.
 
     Args:
       tar_binary: the full pathname for the tar binary
@@ -895,6 +922,8 @@ def upload_if_allowed(args, sync_status, destination, storage_service):
     at 8 am UTC the following day, or earlier than that if there is more data
     than the data buffer threshold that was created at least data wait time in
     the past.
+
+    This function should only be run after a successful download().
     """
     # Check if there is too much data in the relevant time range.
     high_water_mark = sync_status.get_last_archived_mtime()

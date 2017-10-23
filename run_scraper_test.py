@@ -286,14 +286,14 @@ class EndToEndWithFakes(unittest.TestCase):
         slept_seconds = []
         mock_sleep.side_effect = slept_seconds.append
 
-        # Add files for 1.1 hours ago and right now. Only the older should get
+        # Add files for 2.1 hours ago and right now. Only the older should get
         # uploaded.
         now = datetime.datetime.now()
         older = now - datetime.timedelta(minutes=126)
         self.create_file(older)
         self.create_file(now)
 
-        # Verify that the recoverable exception does not rise to the top level
+        # Run the scraper, hopefully uploading only recent data.
         run_scraper.main([
             'run_as_e2e_test',
             '--num_runs', '1',
@@ -304,7 +304,7 @@ class EndToEndWithFakes(unittest.TestCase):
             '--max_uncompressed_size', '1024',
             '--data_buffer_threshold', '1023'])
 
-        # Verify that cloud storage has been updated to 1.1 hours ago
+        # Verify that cloud storage has been updated to 2.1 hours ago
         datastore_client = datastore.Client()
         key = datastore_client.key(
             'dropboxrsyncaddress',
