@@ -702,6 +702,10 @@ class TestScraperInTempDir(unittest.TestCase):
         tstamp = int(time.time()) - 48 * 60 * 60
         os.utime('2016/01/26/testdata.txt', (tstamp, tstamp))
 
+        # Only the younger of the files should be uploaded.  The most recent
+        # mtime is used as evidence of the last time rsync was run, and then the
+        # system backs up for the max time between rsync runs before picking a
+        # set of data to upload.
         os.makedirs('2016/01/27')
         open('2016/01/27/testdata.txt', 'w').write('x' * 2048)
         tstamp = int(time.time()) - 24 * 60 * 60
@@ -717,8 +721,8 @@ class TestScraperInTempDir(unittest.TestCase):
         self.assertEqual(new_upload.call_count, 0)
         scraper.upload_stale_disk(mock_args, mock_status, '.', None)
         self.assertEqual(new_upload.call_count, 1)
-        self.assertEqual(new_upload.call_args[0][-1],
-                         datetime.datetime(2016, 1, 27, 8, 45, 1))
+        self.assertLess(new_upload.call_args[0][-1],
+                        datetime.datetime(2016, 1, 27, 9, 45, 1))
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     @mock.patch.object(scraper, 'upload_up_to_date')
