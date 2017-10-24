@@ -924,7 +924,7 @@ def upload_up_to_date(args, sync_status, destination,
     tarfile_template = TarfileTemplate(args.tarfile_directory,
                                        node, site, args.rsync_module)
     earliest_time = sync_status.get_last_archived_mtime()
-    if candidate_last_archived_mtime < earliest_time:
+    if candidate_last_archived_mtime < earliest_time:  # pragma: no cover
         logging.warning('high water mark (%s) is higher than the requested '
                         'max mtime (%s)',
                         earliest_time,
