@@ -25,6 +25,7 @@ import shutil
 import subprocess
 import tempfile
 import textwrap
+import time
 import unittest
 
 import freezegun
@@ -171,101 +172,6 @@ class TestScraper(unittest.TestCase):
         with self.assertRaises(scraper.RecoverableScraperException):
             scraper.list_rsync_files('/bin/false', 'localhost', '')
         self.assertIn('ERROR', [x.levelname for x in log.records])
-
-    @testfixtures.log_capture()
-    def test_remove_older_files(self):
-        # pylint: disable=line-too-long
-        files = [
-            scraper.RemoteFile('monkey/06/.gz',
-                               datetime.datetime(2016, 10, 28, 23, 12, 59)),
-            scraper.RemoteFile('2016/01/06/.gz',
-                               datetime.datetime(2016, 1, 6, 9, 9, 9)),
-            scraper.RemoteFile('2016/01/06/20160106T05:43:32.741066000Z_:0.meta',
-                               datetime.datetime(2016, 1, 6, 5, 43, 32)),
-            scraper.RemoteFile('2016/01/06/20160106T18:07:33.122784000Z_:0.cputime.gz',
-                               datetime.datetime(2016, 1, 6, 18, 7, 33)),
-            scraper.RemoteFile('2016/01/06/20160106T18:07:33.122784000Z_:0.meta',
-                               datetime.datetime(2016, 1, 6, 18, 7, 33)),
-            scraper.RemoteFile('2016/01/06/20160106T22:31:57.229531000Z_:0.cputime.gz',
-                               datetime.datetime(2016, 1, 6, 22, 31, 57)),
-            scraper.RemoteFile('2016/10/25/20161025T17:52:59.797186000Z_eb.measurementlab.net:35192.s2c_snaplog.gz',
-                               datetime.datetime(2016, 10, 25, 17, 52, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:35192.s2c_snaplog.gz',
-                               datetime.datetime(2016, 10, 26, 17, 52, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_45.56.98.222.c2s_ndttrace.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.cputime.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.meta',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:50264.s2c_snaplog.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:52410.c2s_snaplog.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-        ]
-        filtered = set(
-            scraper.remove_older_files(
-                datetime.datetime(2016, 10, 25, 23, 59, 59), files))
-        self.assertSetEqual(filtered, set([
-            scraper.RemoteFile('2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:35192.s2c_snaplog.gz',
-                               datetime.datetime(2016, 10, 26, 17, 52, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_45.56.98.222.c2s_ndttrace.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.cputime.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.meta',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:50264.s2c_snaplog.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:52410.c2s_snaplog.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-        ]))
-        # pylint: enable=line-too-long
-
-    @freezegun.freeze_time('2016-10-26 18:10:00 UTC')
-    @testfixtures.log_capture()
-    def test_remove_too_recent_files(self):
-        # pylint: disable=line-too-long
-        files = [
-            scraper.RemoteFile('2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:35192.s2c_snaplog.gz',
-                               datetime.datetime(2016, 10, 26, 17, 52, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:39482.c2s_snaplog.gz',
-                               datetime.datetime(2016, 10, 26, 17, 52, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.cputime.gz',
-                               datetime.datetime(2016, 10, 26, 17, 52, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.meta',
-                               datetime.datetime(2016, 10, 26, 17, 52, 59)),
-            scraper.RemoteFile('2016/10/26/no_time_stamp_in_filename.txt',
-                               datetime.datetime(2016, 10, 26, 17, 54, 23)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_45.56.98.222.c2s_ndttrace.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_45.56.98.222.s2c_ndttrace.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.cputime.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:45864.meta',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:50264.s2c_snaplog.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59)),
-            scraper.RemoteFile('2016/10/26/20161026T18:02:59.898385000Z_eb.measurementlab.net:52410.c2s_snaplog.gz',
-                               datetime.datetime(2016, 10, 26, 18, 2, 59))
-        ]
-        filtered = set(scraper.remove_too_recent_files(
-            files, datetime.timedelta(minutes=15)))
-        self.assertItemsEqual(
-            filtered,
-            set([
-                scraper.RemoteFile('2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:35192.s2c_snaplog.gz',
-                                   datetime.datetime(2016, 10, 26, 17, 52, 59)),
-                scraper.RemoteFile('2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:39482.c2s_snaplog.gz',
-                                   datetime.datetime(2016, 10, 26, 17, 52, 59)),
-                scraper.RemoteFile('2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.cputime.gz',
-                                   datetime.datetime(2016, 10, 26, 17, 52, 59)),
-                scraper.RemoteFile('2016/10/26/20161026T17:52:59.797186000Z_eb.measurementlab.net:55050.meta',
-                                   datetime.datetime(2016, 10, 26, 17, 52, 59)),
-                scraper.RemoteFile('2016/10/26/no_time_stamp_in_filename.txt',
-                                   datetime.datetime(2016, 10, 26, 17, 54, 23))]))
-        # pylint: enable=line-too-long
 
     @testfixtures.log_capture()
     def test_download_files_fails_and_dies(self, log):
@@ -581,33 +487,6 @@ class TestScraperInTempDir(unittest.TestCase):
         os.chdir(self._old_cwd)
         shutil.rmtree(self.temp_d)
 
-    def test_find_all_days_to_upload_empty_okay(self):
-        date = datetime.datetime(2016, 7, 6, 23, 59, 59)
-        to_upload = list(scraper.find_all_days_to_upload(self.temp_d, date))
-        self.assertEqual(to_upload, [])
-
-    @testfixtures.log_capture()
-    def test_find_all_days_to_upload(self, log):
-        date = datetime.datetime(2016, 7, 6, 23, 59, 59)
-        open('9000', 'w').write('hello\n')
-        os.makedirs('2015/10/31')
-        open('2015/9000', 'w').write('hello\n')
-        open('2015/10/9000', 'w').write('hello\n')
-        os.makedirs('2015/10/9001')
-        os.makedirs('2016/07/05')
-        os.makedirs('2016/07/07')
-        os.makedirs('2016/07/monkey')
-        os.makedirs('2016/monkey/monkey')
-        os.makedirs('monkey/monkey/monkey')
-        os.makedirs('2016/07/06')
-        to_upload = list(scraper.find_all_days_to_upload(self.temp_d, date))
-        self.assertEqual(to_upload, [
-            datetime.datetime(2015, 10, 31, 23, 59, 59),
-            datetime.datetime(2016, 7, 5, 23, 59, 59),
-            datetime.datetime(2016, 7, 6, 23, 59, 59)
-        ])
-        self.assertIn('ERROR', [x.levelname for x in log.records])
-
     def test_create_tarfile(self):
         os.makedirs('2016/01/28')
         file('2016/01/28/test1.txt', 'w').write('hello')
@@ -804,28 +683,42 @@ class TestScraperInTempDir(unittest.TestCase):
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     @mock.patch.object(scraper, 'upload_up_to_date')
     def test_initial_upload_empty_disk(self, new_upload):
-        scraper.upload_stale_disk({}, None, '.', None)
-        self.assertEqual(new_upload.call_count, 0)
-
-    @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
-    @mock.patch.object(scraper, 'upload_up_to_date')
-    def test_initial_upload_no_safe_dirs(self, new_upload):
-        os.makedirs('2016/01/28')
-        scraper.upload_stale_disk({}, None, '.', None)
+        mock_status = mock.MagicMock()
+        mock_status.get_last_archived_mtime.return_value = datetime.datetime(
+            2016, 1, 27, 9, 9, 9)
+        mock_args = mock.Mock()
+        mock_args.data_wait_time = datetime.timedelta(hours=1)
+        scraper.upload_stale_disk(mock_args, mock_status, '.', None)
         self.assertEqual(new_upload.call_count, 0)
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     @mock.patch.object(scraper, 'upload_up_to_date')
     @testfixtures.log_capture()
-    def test_initial_upload_one_safe_dir(self, new_upload):
+    def test_initial_upload_with_enough_data(self, new_upload):
         new_upload.return_value = None
+
         os.makedirs('2016/01/26')
+        open('2016/01/26/testdata.txt', 'w').write('x' * 2048)
+        tstamp = int(time.time()) - 48 * 60 * 60
+        os.utime('2016/01/26/testdata.txt', (tstamp, tstamp))
+
         os.makedirs('2016/01/27')
+        open('2016/01/27/testdata.txt', 'w').write('x' * 2048)
+        tstamp = int(time.time()) - 24 * 60 * 60
+        os.utime('2016/01/27/testdata.txt', (tstamp, tstamp))
+
+        mock_status = mock.MagicMock()
+        mock_status.get_last_archived_mtime.return_value = datetime.datetime(
+            2016, 1, 25, 9, 9, 9)
+        mock_args = mock.Mock()
+        mock_args.data_wait_time = datetime.timedelta(hours=1)
+        mock_args.data_buffer_threshold = 1000
+
         self.assertEqual(new_upload.call_count, 0)
-        scraper.upload_stale_disk({}, None, '.', None)
+        scraper.upload_stale_disk(mock_args, mock_status, '.', None)
         self.assertEqual(new_upload.call_count, 1)
         self.assertEqual(new_upload.call_args[0][-1],
-                         datetime.datetime(2016, 1, 26, 23, 59, 59))
+                         datetime.datetime(2016, 1, 27, 8, 45, 1))
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     @mock.patch.object(scraper, 'upload_up_to_date')
