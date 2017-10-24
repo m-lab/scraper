@@ -321,7 +321,7 @@ def download_files(rsync_binary, rsync_url, files, destination):
     logging.info('sync completed successfully from %s', rsync_url)
 
 
-def max_new_archived_datetime():
+def must_upload_up_to():
     """The most recent datetime that we could consider "old enough" to upload.
 
     8 hours after midnight, we will assume that no tests from the previous day
@@ -871,10 +871,10 @@ def upload_if_allowed(args, sync_status, destination, storage_service):
     else:
         # Even if we don't have too much data, do check if we should upload
         # yesterday's data.
-        proposed_new_high_water_mark = max_new_archived_datetime()
+        proposed_new_high_water_mark = must_upload_up_to()
         if high_water_mark < proposed_new_high_water_mark:
             upload_up_to_date(args, sync_status, destination, storage_service,
-                              max_new_archived_datetime())
+                              proposed_new_high_water_mark)
 
 
 def upload_stale_disk(args, sync_status, destination, storage_service):

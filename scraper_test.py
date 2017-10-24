@@ -237,12 +237,12 @@ class TestScraper(unittest.TestCase):
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     def test_new_archived_date_after_8am(self):
-        self.assertEqual(scraper.max_new_archived_datetime(),
+        self.assertEqual(scraper.must_upload_up_to(),
                          datetime.datetime(2016, 1, 27, 23, 59, 59))
 
     @freezegun.freeze_time('2016-01-28 07:43:16 UTC')
     def test_new_archived_date_before_8am(self):
-        self.assertEqual(scraper.max_new_archived_datetime(),
+        self.assertEqual(scraper.must_upload_up_to(),
                          datetime.datetime(2016, 1, 26, 23, 59, 59))
 
     def test_datetime_to_epoch(self):
