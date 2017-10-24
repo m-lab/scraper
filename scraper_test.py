@@ -720,7 +720,7 @@ class TestScraperInTempDir(unittest.TestCase):
             '/bin/tar', 'tfz',
             '20160128T010101Z-mlab9-dne04-exper-0000.tgz'
         ]).strip()
-        self.assertEqual(table1, './2016/01/28/test1.txt')
+        self.assertEqual(table1, '2016/01/28/test1.txt')
         gen.next()
         self.assertFalse(os.path.exists(
             '20160128T010101Z-mlab9-dne04-exper-0000.tgz'))
@@ -728,7 +728,7 @@ class TestScraperInTempDir(unittest.TestCase):
             '/bin/tar', 'tfz',
             '20160128T010102Z-mlab9-dne04-exper-0000.tgz'
         ]).strip()
-        self.assertEqual(table2, './2016/01/28/test2.txt')
+        self.assertEqual(table2, '2016/01/28/test2.txt')
         with self.assertRaises(StopIteration):
             gen.next()
 
@@ -756,7 +756,7 @@ class TestScraperInTempDir(unittest.TestCase):
             '/bin/tar', 'tfz',
             '20160128T010101Z-mlab9-dne04-exper-0000.tgz'
         ]).strip()
-        self.assertEqual(table1, './2016/01/28/bar/test1.txt')
+        self.assertEqual(table1, '2016/01/28/bar/test1.txt')
         gen.next()
         self.assertFalse(os.path.exists(
             '20160128T010101Z-mlab9-dne04-exper-0000.tgz'))
@@ -764,7 +764,7 @@ class TestScraperInTempDir(unittest.TestCase):
             '/bin/tar', 'tfz',
             '20160128T010102Z-mlab9-dne04-exper-0000.tgz'
         ]).strip()
-        self.assertEqual(table2, './2016/01/28/bar/test2.txt')
+        self.assertEqual(table2, '2016/01/28/bar/test2.txt')
         with self.assertRaises(StopIteration):
             gen.next()
 

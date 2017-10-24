@@ -494,6 +494,8 @@ def all_files(directory, high_water_mark, too_recent_timestamp):
     for root, _dirs, files in os.walk(directory):
         for filename in files:
             fullname = os.path.join(root, filename)
+            if fullname.startswith('./'):
+                fullname = fullname[2:]
             stat = os.stat(fullname)
             mtime = stat.st_mtime
             size = stat.st_size
