@@ -829,7 +829,7 @@ def download(args, rsync_url, sync_status, destination):
                                         destination)
 
     files_to_download = [remote_file for remote_file in all_remote_files
-                         if high_water_mark < remote_file.mtime < too_recent]
+                         if high_water_mark < remote_file.mtime <= too_recent]
 
     download_files(args.rsync_binary, rsync_url, files_to_download, destination)
 
