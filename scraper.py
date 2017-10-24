@@ -266,26 +266,6 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     return files
 
 
-def remove_older_files(high_water_mark, files):
-    """Yields all well-formed filenames newer than `date`.
-
-    Args:
-      high_water_mark: the datetime specifying when data is too old
-      files: a list of RemoteFile objects
-
-    Yields:
-      a sequence of RemoteFile objects
-    """
-    for remote_file in files:
-        if remote_file.filename.count('/') < 3:
-            logging.info(
-                'Ignoring %s (if it is a directory, the directory '
-                'contents will still be examined)', remote_file.filename)
-            continue
-        if remote_file.mtime > high_water_mark:
-            yield remote_file
-
-
 # Download files 1000 at a time to help keep rsync memory usage low.
 #    https://rsync.samba.org/FAQ.html#5
 FILES_PER_RSYNC_DOWNLOAD = 1000
@@ -365,46 +345,6 @@ def datetime_to_epoch(datetime_value):
     """
     epoch = datetime.datetime(year=1970, month=1, day=1)
     return int((datetime_value - epoch).total_seconds())
-
-
-def find_all_days_to_upload(localdir, candidate_last_archived_date):
-    """Find all the days that are eligible to be uploaded.
-
-    Search through localdir, trying to find all the data that is from a day that
-    is old enough to be uploaded.
-
-    Args:
-      localdir: the local directory containing all the data
-      candidate_last_archived_date: the most recent day that is eligible to be
-                                    uploaded
-
-    Yields:
-      a sequence of days that exist on the localhost and are old enough to be
-      uploaded.
-    """
-    for year in sorted(filter(str.isdigit, os.listdir(localdir))):
-        year_dir = os.path.join(localdir, year)
-        if not os.path.isdir(year_dir):
-            continue
-        for month in sorted(filter(str.isdigit, os.listdir(year_dir))):
-            month_dir = os.path.join(localdir, year, month)
-            if not os.path.isdir(month_dir):
-                continue
-            for day in sorted(filter(str.isdigit, os.listdir(month_dir))):
-                date_dir = os.path.join(localdir, year, month, day)
-                if not os.path.isdir(date_dir):
-                    continue
-                # Make sure to specify radix 10 to prevent an octal
-                # interpretation of 0-padded single digits 08 and 09.
-                try:
-                    date = datetime.datetime(
-                        int(year, 10), int(month, 10), int(day, 10),
-                        23, 59, 59)
-                    if date <= candidate_last_archived_date:
-                        yield date
-                except ValueError as verr:
-                    logging.error('Bad directory that looks like a day: %s %s',
-                                  date_dir, verr)
 
 
 @contextlib.contextmanager
@@ -870,41 +810,28 @@ def init(args):
     return (rsync_url, status, destination, storage_service)
 
 
-def remove_too_recent_files(filelist,
-                            quiescence_period=datetime.timedelta(minutes=15)):
-    """Removes all files which have a too-recent mtime.
-
-    Args:
-      filelist: a list of RemoteFile objects
-      quiescence_period: a timedelta specifying how recent is "too recent"
-
-    Yields:
-      a sequence of RemoteFile objects
-    """
-    border = datetime.datetime.utcnow() - quiescence_period
-    for remote_file in filelist:
-        if remote_file.mtime < border:
-            # If the file is not too new, append the file
-            yield remote_file
-        else:
-            # There is a timestamp, but the file is too new.
-            logging.debug('%s is too recent a file to download',
-                          remote_file.filename)
+# How long ago should a file have been last edited before we should consider
+# downloading it.
+QUIESCENCE_THRESHOLD = datetime.timedelta(minutes=15)
 
 
 def download(args, rsync_url, sync_status, destination):
-    """Rsync download all files that are new enough.
+    """Rsync download all files that are new enough but not too new.
 
     Find the current last_archived_date from cloud datastore, then get the file
     list and download the files from the server.
     """
     sync_status.update_last_collection()
     high_water_mark = sync_status.get_last_archived_mtime()
+    too_recent = datetime.datetime.utcnow() - QUIESCENCE_THRESHOLD
+
     all_remote_files = list_rsync_files(args.rsync_binary, rsync_url,
                                         destination)
-    newer_files = remove_older_files(high_water_mark, all_remote_files)
-    stable_files = remove_too_recent_files(newer_files)
-    download_files(args.rsync_binary, rsync_url, stable_files, destination)
+
+    files_to_download = [remote_file for remote_file in all_remote_files
+                         if high_water_mark < remote_file.mtime <= too_recent]
+
+    download_files(args.rsync_binary, rsync_url, files_to_download, destination)
 
 
 def upload_is_recommended(high_water_mark, too_recent_boundary,
@@ -943,18 +870,21 @@ def upload_if_allowed(args, sync_status, destination, storage_service):
 
 
 def upload_stale_disk(args, sync_status, destination, storage_service):
-    """Upload all data from the disk where we also have the next day's data."""
-    days = list(find_all_days_to_upload(destination,
-                                        max_new_archived_datetime()))
-    if len(days) <= 1:
-        logging.info('No stale data found')
+    """Upload old, uploadable data from the disk if there is a lot of it."""
+    high_water_mark = sync_status.get_last_archived_mtime()
+    most_recent_allowable_mtime = datetime.datetime.now() - args.data_wait_time
+    files = sorted(
+        all_files(destination, high_water_mark, most_recent_allowable_mtime),
+        cmp=lambda x, y: cmp(x.mtime, y.mtime))
+    if not files:
         return
-    else:
-        days.pop()  # The last day is not okay
-        last_okay_day = days[-1]
-        logging.warning('Stale data found: %s', str(last_okay_day))
+    most_recent_mtime = datetime.datetime.utcfromtimestamp(files[-1].mtime)
+    oldest_possible_rsync_run = most_recent_mtime - args.data_wait_time
+    if upload_is_recommended(high_water_mark, oldest_possible_rsync_run,
+                             args.data_buffer_threshold, destination):
+        logging.info('Uploading stale data before rsync')
         upload_up_to_date(args, sync_status, destination, storage_service,
-                          last_okay_day)
+                          oldest_possible_rsync_run)
 
 
 def day_of_week(day):
