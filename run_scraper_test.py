@@ -311,8 +311,8 @@ class EndToEndWithFakes(unittest.TestCase):
             'rsync://ndt.iupui.mlab4.xxx08.measurement-lab.org'
             ':7999/iupui_ndt')
         value = datastore_client.get(key)
-        time_since_epoch = scraper.datetime_to_epoch(older)
-        self.assertEqual(value['maxrawfilemtimearchived'], time_since_epoch)
+        time_since_epoch = scraper.datetime_to_epoch(now)
+        self.assertLess(value['maxrawfilemtimearchived'], time_since_epoch)
 
         # Verify that the storage service received one file
         tgzfiles = os.listdir(self.cloud_upload_dir)

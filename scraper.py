@@ -753,6 +753,12 @@ class SyncStatus(object):
         """Updates the mtime column in cloud datastore."""
         self.update_data(self.MTIME_KEY, mtime)
 
+    def on_upload_success(self, mtime_datetime):
+        """Updates both the last archived date and the last archived mtime."""
+        self.update_mtime(datetime_to_epoch(mtime_datetime))
+        self.update_last_archived_date(mtime_datetime)
+        self.update_debug_message('')
+
 
 class SyncStatusLogHandler(logging.Handler):
     """Handles error log messages by writing them to cloud datastore."""
@@ -865,8 +871,10 @@ def upload_if_allowed(args, sync_status, destination, storage_service):
     else:
         # Even if we don't have too much data, do check if we should upload
         # yesterday's data.
-        upload_up_to_date(args, sync_status, destination, storage_service,
-                          max_new_archived_datetime())
+        proposed_new_high_water_mark = max_new_archived_datetime()
+        if high_water_mark < proposed_new_high_water_mark:
+            upload_up_to_date(args, sync_status, destination, storage_service,
+                              max_new_archived_datetime())
 
 
 def upload_stale_disk(args, sync_status, destination, storage_service):
@@ -912,15 +920,20 @@ def upload_up_to_date(args, sync_status, destination,
     """
     logging.info('Uploading all data prior to %s',
                  candidate_last_archived_mtime)
-    max_mtime = None
     node, site = node_and_site(args.rsync_host)
     tarfile_template = TarfileTemplate(args.tarfile_directory,
                                        node, site, args.rsync_module)
     earliest_time = sync_status.get_last_archived_mtime()
+    if candidate_last_archived_mtime < earliest_time:
+        logging.warning('high water mark (%s) is higher than the requested '
+                        'max mtime (%s)',
+                        earliest_time,
+                        candidate_last_archived_mtime)
+        return
     total_daily_files = 0
     for (tgz_filename,
          min_mtime,
-         max_mtime,
+         _max_mtime,
          num_files) in create_temporary_tarfiles(args.tar_binary,
                                                  tarfile_template,
                                                  destination,
@@ -933,25 +946,13 @@ def upload_up_to_date(args, sync_status, destination,
         total_daily_files += num_files
         BYTES_UPLOADED.labels(bucket=args.bucket).inc(
             os.stat(tgz_filename).st_size)
-    if max_mtime is not None:
-        # The FILES_UPLOADED count should only be incremented once we are
-        # confident that we won't re-upload all the files. Therefore, update it
-        # immediately before or after we call update_last_archived_date().
-        max_mtime_datetime = datetime.datetime.utcfromtimestamp(max_mtime)
-        FILES_UPLOADED.labels(
-            rsync_host_module='%s-%s-%s' % (node, site, args.rsync_module),
-            day_of_week=day_of_week(max_mtime_datetime)).inc(total_daily_files)
-        sync_status.update_last_archived_date(max_mtime_datetime)
-        sync_status.update_mtime(max_mtime)
-        delete_datafiles_up_to(destination, max_mtime)
-    else:
-        # The last archived date indicates the date with which we are finished.
-        # Therefore, the high water mark should be equal to the last possible
-        # high water mark of the day, assuming there was no data that day.
-        datetime_value = datetime.datetime(candidate_last_archived_mtime.year,
-                                           candidate_last_archived_mtime.month,
-                                           candidate_last_archived_mtime.day,
-                                           23, 59, 59)
-        sync_status.update_mtime(datetime_to_epoch(datetime_value))
-        sync_status.update_last_archived_date(datetime_value)
-    sync_status.update_debug_message('')
+    # The FILES_UPLOADED count should only be incremented once we are
+    # confident that we won't re-upload all the files. Therefore, update it
+    # immediately before or after we call update_last_archived_date().
+    FILES_UPLOADED.labels(
+        rsync_host_module='%s-%s-%s' % (node, site, args.rsync_module),
+        day_of_week=day_of_week(candidate_last_archived_mtime)).inc(
+            total_daily_files)
+    sync_status.on_upload_success(candidate_last_archived_mtime)
+    delete_datafiles_up_to(destination,
+                           datetime_to_epoch(candidate_last_archived_mtime))
