@@ -373,9 +373,7 @@ class TestScraper(unittest.TestCase):
         status = scraper.SyncStatus(None, None)
         status.update_last_archived_date(datetime.date(2012, 2, 29))
         self.assertEqual(patched_update.call_count, 1)
-        self.assertTrue(u'x2012-02-29' in patched_update.call_args[0])
-        index = patched_update.call_args[0].index(u'x2012-02-29')
-        self.assertEqual(type(patched_update.call_args[0][index]), unicode)
+        self.assertTrue(u'obsolete' in patched_update.call_args[0])
 
     def test_update_data_no_value(self):
         client = mock.Mock()
@@ -656,7 +654,7 @@ class TestScraperInTempDir(unittest.TestCase):
 
         max_mtime = scraper.datetime_to_epoch(
             datetime.datetime(2009, 3, 1, 0, 0, 0))
-        scraper.delete_datafiles_up_to(self.temp_d, max_mtime)
+        scraper.delete_local_datafiles_up_to(self.temp_d, max_mtime)
         self.assertEqual([], os.listdir(self.temp_d))
 
     def test_remove_datafiles_not_all_finished(self):
@@ -676,7 +674,7 @@ class TestScraperInTempDir(unittest.TestCase):
 
         max_timestamp = scraper.datetime_to_epoch(
             datetime.datetime(2009, 2, 28, 0, 0, 0))
-        scraper.delete_datafiles_up_to(self.temp_d, max_timestamp)
+        scraper.delete_local_datafiles_up_to(self.temp_d, max_timestamp)
         self.assertEqual(
             ['data2.txt'], os.listdir(os.path.join(self.temp_d, '2009/02/28')))
 
