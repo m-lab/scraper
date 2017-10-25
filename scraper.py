@@ -321,8 +321,8 @@ def download_files(rsync_binary, rsync_url, files, destination):
     logging.info('sync completed successfully from %s', rsync_url)
 
 
-def max_new_archived_datetime():
-    """The most recent datetime that we could consider "old enough" to upload.
+def must_upload_up_to():
+    """This is the time that we MUST upload all data older than.
 
     8 hours after midnight, we will assume that no tests from the previous day
     could possibly have failed to be written to disk.  So this should always be
@@ -604,7 +604,7 @@ def upload_tarfile(service, tgz_filename, date, experiment,
             raise NonRecoverableScraperException('upload', str(error))
 
 
-def delete_datafiles_up_to(directory, max_mtime):
+def delete_local_datafiles_up_to(directory, max_mtime):
     """Removes files with an mtime before a given datetime from the local disk.
 
     Prunes any empty subdirectories that it creates.
@@ -734,10 +734,14 @@ class SyncStatus(object):
         value[entry_key] = entry_value
         self._client.put(value)
 
-    def update_last_archived_date(self, date):
-        """Updates the date before which it is safe to delete data."""
-        date_str = u'x%d-%02d-%02d' % (date.year, date.month, date.day)
-        self.update_data(self.COLLECTION_KEY, date_str)
+    def update_last_archived_date(self, _date):
+        """Updates the date before which it is safe to delete data.
+
+        Obsolete. We will keep this running in production to find what systems
+        depend on that data column, then we will fix those systems and delete
+        this column entirely.
+        """
+        self.update_data(self.COLLECTION_KEY, u'obsolete')
 
     def update_debug_message(self, message):
         """Updates the debug message in cloud datastore."""
@@ -750,8 +754,27 @@ class SyncStatus(object):
         self.update_data(self.LAST_COLLECTION_KEY, unicode(text, 'UTF-8'))
 
     def update_mtime(self, mtime):
-        """Updates the mtime column in cloud datastore."""
+        """Updates the mtime column in cloud datastore.
+
+        The mtime data is used by scraper-sync and subsequently
+        delete_logs_safely to delete the experiment data with an mtime older
+        than this value.
+        """
         self.update_data(self.MTIME_KEY, mtime)
+
+    def on_upload_success(self, new_high_water_mark_mtime):
+        """Updates both the last archived date and the last archived mtime.
+
+        This method should be called after a successful upload, which itself
+        should only happen either on program start, or after a successful
+        download.
+
+        Args:
+          new_high_water_mark_mtime: the new mtime high water mark
+        """
+        self.update_last_archived_date(new_high_water_mark_mtime)
+        self.update_mtime(datetime_to_epoch(new_high_water_mark_mtime))
+        self.update_debug_message('')
 
 
 class SyncStatusLogHandler(logging.Handler):
@@ -834,8 +857,8 @@ def download(args, rsync_url, sync_status, destination):
     download_files(args.rsync_binary, rsync_url, files_to_download, destination)
 
 
-def upload_is_recommended(high_water_mark, too_recent_boundary,
-                          data_buffer_threshold, directory):
+def should_upload(high_water_mark, too_recent_boundary, data_buffer_threshold,
+                  directory):
     """Returns whether we have enough data buffered to upload eagerly."""
     total = 0
     for local_file in all_files(directory, high_water_mark,
@@ -857,16 +880,18 @@ def upload_if_allowed(args, sync_status, destination, storage_service):
     # Check if there is too much data in the relevant time range.
     high_water_mark = sync_status.get_last_archived_mtime()
     most_recent_allowable_mtime = datetime.datetime.now() - args.data_wait_time
-    if upload_is_recommended(high_water_mark, most_recent_allowable_mtime,
-                             args.data_buffer_threshold, destination):
+    if should_upload(high_water_mark, most_recent_allowable_mtime,
+                     args.data_buffer_threshold, destination):
         logging.info('Uploading early due to data volume')
         upload_up_to_date(args, sync_status, destination, storage_service,
                           most_recent_allowable_mtime)
     else:
         # Even if we don't have too much data, do check if we should upload
         # yesterday's data.
-        upload_up_to_date(args, sync_status, destination, storage_service,
-                          max_new_archived_datetime())
+        proposed_new_high_water_mark = must_upload_up_to()
+        if high_water_mark < proposed_new_high_water_mark:
+            upload_up_to_date(args, sync_status, destination, storage_service,
+                              proposed_new_high_water_mark)
 
 
 def upload_stale_disk(args, sync_status, destination, storage_service):
@@ -880,8 +905,8 @@ def upload_stale_disk(args, sync_status, destination, storage_service):
         return
     most_recent_mtime = datetime.datetime.utcfromtimestamp(files[-1].mtime)
     oldest_possible_rsync_run = most_recent_mtime - args.data_wait_time
-    if upload_is_recommended(high_water_mark, oldest_possible_rsync_run,
-                             args.data_buffer_threshold, destination):
+    if should_upload(high_water_mark, oldest_possible_rsync_run,
+                     args.data_buffer_threshold, destination):
         logging.info('Uploading stale data before rsync')
         upload_up_to_date(args, sync_status, destination, storage_service,
                           oldest_possible_rsync_run)
@@ -906,21 +931,25 @@ def upload_up_to_date(args, sync_status, destination,
                       candidate_last_archived_mtime):
     """Tar and upload local data.
 
-    Tar up what we have for each unarchived day that is sufficiently in the past
-    (up to and including the candidate_last_archived_date), upload what we have,
-    and delete the local copies of all successfully-uploaded data.
+    Tar up what data we have that is sufficiently in the past (up to and
+    including the candidate_last_archived_mtime), upload what we have, and
+    delete the local copies of all successfully-uploaded data.
     """
     logging.info('Uploading all data prior to %s',
                  candidate_last_archived_mtime)
-    max_mtime = None
     node, site = node_and_site(args.rsync_host)
     tarfile_template = TarfileTemplate(args.tarfile_directory,
                                        node, site, args.rsync_module)
     earliest_time = sync_status.get_last_archived_mtime()
+    if candidate_last_archived_mtime < earliest_time:  # pragma: no cover
+        logging.warning('candidate max mtime (%s) is before high water mark '
+                        '(%s)',
+                        candidate_last_archived_mtime, earliest_time)
+        return
     total_daily_files = 0
     for (tgz_filename,
          min_mtime,
-         max_mtime,
+         _max_mtime,
          num_files) in create_temporary_tarfiles(args.tar_binary,
                                                  tarfile_template,
                                                  destination,
@@ -933,25 +962,13 @@ def upload_up_to_date(args, sync_status, destination,
         total_daily_files += num_files
         BYTES_UPLOADED.labels(bucket=args.bucket).inc(
             os.stat(tgz_filename).st_size)
-    if max_mtime is not None:
-        # The FILES_UPLOADED count should only be incremented once we are
-        # confident that we won't re-upload all the files. Therefore, update it
-        # immediately before or after we call update_last_archived_date().
-        max_mtime_datetime = datetime.datetime.utcfromtimestamp(max_mtime)
-        FILES_UPLOADED.labels(
-            rsync_host_module='%s-%s-%s' % (node, site, args.rsync_module),
-            day_of_week=day_of_week(max_mtime_datetime)).inc(total_daily_files)
-        sync_status.update_last_archived_date(max_mtime_datetime)
-        sync_status.update_mtime(max_mtime)
-        delete_datafiles_up_to(destination, max_mtime)
-    else:
-        # The last archived date indicates the date with which we are finished.
-        # Therefore, the high water mark should be equal to the last possible
-        # high water mark of the day, assuming there was no data that day.
-        datetime_value = datetime.datetime(candidate_last_archived_mtime.year,
-                                           candidate_last_archived_mtime.month,
-                                           candidate_last_archived_mtime.day,
-                                           23, 59, 59)
-        sync_status.update_mtime(datetime_to_epoch(datetime_value))
-        sync_status.update_last_archived_date(datetime_value)
-    sync_status.update_debug_message('')
+    # The FILES_UPLOADED count should only be incremented once we are
+    # confident that we won't re-upload all the files. Therefore, update it
+    # immediately before or after we call on_upload_success().
+    FILES_UPLOADED.labels(
+        rsync_host_module='%s-%s-%s' % (node, site, args.rsync_module),
+        day_of_week=day_of_week(candidate_last_archived_mtime)).inc(
+            total_daily_files)
+    sync_status.on_upload_success(candidate_last_archived_mtime)
+    delete_local_datafiles_up_to(
+        destination, datetime_to_epoch(candidate_last_archived_mtime))
