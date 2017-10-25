@@ -942,8 +942,8 @@ def upload_up_to_date(args, sync_status, destination,
                                        node, site, args.rsync_module)
     earliest_time = sync_status.get_last_archived_mtime()
     if candidate_last_archived_mtime < earliest_time:  # pragma: no cover
-        logging.warning('candidate max mtime (%s) is less than then high water '
-                        'mark (%s)',
+        logging.warning('candidate max mtime (%s) is before high water mark '
+                        '(%s)',
                         candidate_last_archived_mtime, earliest_time)
         return
     total_daily_files = 0
