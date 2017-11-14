@@ -4,13 +4,17 @@
 # Scraper
 Scrape experiment data off of MLab nodes and upload it to the ETL pipeline.
 
-# Requirements
+# Development Requirements
 
-The libraries required to run the project are in `requirements.txt`, the
-libraries required to run the tests and the commit hooks are in
-`test-requirements.txt`. To develop code in this repo, you will want both, so
-you should probably type `pip install -r requirements.txt` and `pip install -r
-test-requirements.txt`
+All tests are run inside docker containers, so the big requirement is that you
+must be able to build and run docker containers.  The `./pre-commit.sh` script
+runs the tests and the `./prepare-commit-msg.sh` script makes a nice description
+of the current state of test coverage and code health.  I recommend following
+the instructions in the comments of each of those files encouraging you to make
+symlinks so that the scripts are run automatically on every checkin.  Those
+scripts run tests inside Docker containers, and the containers and tests are (or
+should be) exactly the same as the ones that Travis runs, so this local testing
+should pass if and only if the Travis CI tests will pass.
 
 # Building and running
 
