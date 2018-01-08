@@ -170,6 +170,13 @@ class TestScraper(unittest.TestCase):
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
+    def test_list_rsync_files_throws_on_timeout(self, log):
+        with self.assertRaises(scraper.RecoverableScraperException):
+            scraper.list_rsync_files(
+                '/usr/bin/timeout', '/usr/bin/yes', 'localhost', '', '1')
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+
+    @testfixtures.log_capture()
     def test_list_rsync_files_fails(self, log):
         with self.assertRaises(scraper.RecoverableScraperException):
             scraper.list_rsync_files(
