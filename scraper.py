@@ -145,7 +145,8 @@ RemoteFile = collections.namedtuple('RemoteFile', ['filename', 'mtime'])
 
 
 @RSYNC_LIST_FILES_RUNS.time()
-def list_rsync_files(rsync_binary, rsync_url, destination):
+def list_rsync_files(timeout_binary, rsync_binary, rsync_url, destination,
+                     timeout_time='86400'):
     """Get a list of all files in the rsync module on the server.
 
     Lists all the files we might wish to download from the server. Be
@@ -154,9 +155,12 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     are never interpreted by a shell.
 
     Args:
+      timeout_binary: the full path location of rsync
       rsync_binary: the full path location of rsync
       rsync_url: the rsync:// url to download the list from
       destination: the directory to download to
+      timeout_time: optional string to pass to timeout - default is '86400',
+                    which is 24 hours in seconds
 
     Returns:
       a list of RemoteFile objects
@@ -210,7 +214,10 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
     # -vv causes the debug output which we parse
     # -out-format causes the output to be the filename, then a space, then the
     #             mtime of the file in question.
-    command = ([rsync_binary, '-n', '-vv', '--out-format', '%n %M'] +
+    # We use the -s option to timeout insted of --signal because not all timeout
+    # implementations accept --signal.
+    command = ([timeout_binary, '-s', 'KILL', '-t', timeout_time] +
+               [rsync_binary, '-n', '-vv', '--out-format', '%n %M'] +
                RSYNC_ARGS +
                [rsync_url, destination])
     logging.info('Listing files on server with the command: %s',
@@ -271,7 +278,8 @@ def list_rsync_files(rsync_binary, rsync_url, destination):
 FILES_PER_RSYNC_DOWNLOAD = 1000
 
 
-def download_files(rsync_binary, rsync_url, files, destination):
+def download_files(timeout_binary, rsync_binary, rsync_url, files, destination,
+                   timeout_time='86400'):
     """Downloads the files from the server.
 
     The filenames may not be safe for shell interpretation, so make sure
@@ -279,10 +287,13 @@ def download_files(rsync_binary, rsync_url, files, destination):
     the download, exit.
 
     Args:
+      timeout_binary: The full path to `timeout`
       rsync_binary: The full path to `rsync`
       rsync_url: The url from which to retrieve the files
       files: an iterable of RemoteFile objects to retrieve
       destination: the directory on the local host to put the files
+      timeout_time: optional string to pass to timeout - default is '86400',
+                    which is 24 hours in seconds
     """
     # Dates are no longer needed, and we need to iterate over the sequence of
     # filenames multiple times.
@@ -290,6 +301,9 @@ def download_files(rsync_binary, rsync_url, files, destination):
     if not files:
         logging.info('No files to be downloaded from %s', rsync_url)
         return
+    # We use the -s option to timeout insted of --signal because not all timeout
+    # implementations accept --signal.
+    timeout_command_prefix = [timeout_binary, '-s', 'KILL', '-t', timeout_time]
     # Rsync all the files passed in.  Do this piecewise, because rsync allocates
     # a per-file chunk of memory, so long file lists end up causing huge memory
     # usage.
@@ -304,15 +318,15 @@ def download_files(rsync_binary, rsync_url, files, destination):
                 # Download all the files.
                 logging.info('Synching %d files (already synched %d/%d)',
                              len(filenames), start, len(files))
-                # Run rsync.
+                # Run rsync inside of timeout.
                 # Use all the default arguments.
                 # Don't crash when ephemeral files disappear.
                 # Filenames in the temp file are null-separated.
                 # The filenames to transfer are in a file.
-                command = ([rsync_binary] + RSYNC_ARGS + ['--from0',
-                                                          '--files-from',
-                                                          temp.name, rsync_url,
-                                                          destination])
+                command = (timeout_command_prefix +
+                           [rsync_binary] +
+                           RSYNC_ARGS + ['--from0', '--files-from', temp.name,
+                                         rsync_url, destination])
                 error_code = subprocess.call(command)
                 if error_code not in (0, 24):
                     message = 'rsync download failed exit code: %d' % error_code
@@ -597,10 +611,10 @@ def upload_tarfile(service, tgz_filename, date, experiment,
         logging.info('Upload to %s/%s complete!', bucket, name)
     except googleapiclient.errors.HttpError as error:  # pragma: no cover
         if (error.resp.status // 100) == 5:  # HTTP 500 is recoverable
-            logging.warning('Recoverable error on upload: ' + str(error))
+            logging.warning('Recoverable error on upload: %s', str(error))
             raise RecoverableScraperException('upload', str(error))
         else:
-            logging.warning('Non-recoverable error on upload: ' + str(error))
+            logging.warning('Non-recoverable error on upload: %s', str(error))
             raise NonRecoverableScraperException('upload', str(error))
 
 
@@ -848,13 +862,14 @@ def download(args, rsync_url, sync_status, destination):
     high_water_mark = sync_status.get_last_archived_mtime()
     too_recent = datetime.datetime.utcnow() - QUIESCENCE_THRESHOLD
 
-    all_remote_files = list_rsync_files(args.rsync_binary, rsync_url,
-                                        destination)
+    all_remote_files = list_rsync_files(args.timeout_binary, args.rsync_binary,
+                                        rsync_url, destination)
 
     files_to_download = [remote_file for remote_file in all_remote_files
                          if high_water_mark < remote_file.mtime <= too_recent]
 
-    download_files(args.rsync_binary, rsync_url, files_to_download, destination)
+    download_files(args.timeout_binary, args.rsync_binary, rsync_url,
+                   files_to_download, destination)
 
 
 def should_upload(high_water_mark, too_recent_boundary, data_buffer_threshold,
