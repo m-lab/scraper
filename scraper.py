@@ -155,7 +155,7 @@ def list_rsync_files(timeout_binary, rsync_binary, rsync_url, destination,
     are never interpreted by a shell.
 
     Args:
-      timeout_binary: the full path location of rsync
+      timeout_binary: the full path location of timeout
       rsync_binary: the full path location of rsync
       rsync_url: the rsync:// url to download the list from
       destination: the directory to download to
