@@ -123,6 +123,13 @@ def parse_cmdline(args):
         required=False,
         help='The location of the rsync binary (default is /usr/bin/rsync)')
     parser.add_argument(
+        '--timeout_binary',
+        metavar='TIMEOUT',
+        type=str,
+        default='/usr/bin/timeout',
+        required=False,
+        help='The location of the timeout binary (default is /usr/bin/timeout)')
+    parser.add_argument(
         '--rsync_port',
         metavar='PORT',
         type=int,

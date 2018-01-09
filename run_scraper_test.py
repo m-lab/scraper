@@ -21,6 +21,7 @@
 import datetime
 import os
 import shutil
+import subprocess
 import unittest
 
 import apiclient
@@ -68,11 +69,18 @@ class TestRunScraper(unittest.TestCase):
         self.assertEqual(args.rsync_port, 7999)
         self.assertEqual(args.max_uncompressed_size, 100000000)
         self.assertEqual(args.num_runs, float('inf'))
+        self.assertEqual(args.timeout_binary, '/usr/bin/timeout')
 
     def test_args_help(self):
         with self.assertRaises(SystemExit):
             with testfixtures.OutputCapture() as _:
                 run_scraper.parse_cmdline(['-h'])
+
+    def test_system_has_timeout(self):
+        subprocess.check_call(['/usr/bin/timeout', '-t', '3', '/bin/echo'])
+        with self.assertRaises(subprocess.CalledProcessError):
+            subprocess.check_call(['/usr/bin/timeout', '-t', '1',
+                                   '/bin/sleep', '10'])
 
 
 class EmulatorCreds(google.auth.credentials.Credentials):

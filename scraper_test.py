@@ -87,8 +87,8 @@ class TestScraper(unittest.TestCase):
                                             stdout=subprocess.PIPE)
             with mock.patch.object(subprocess, 'Popen') as mock_subprocess:
                 mock_subprocess.return_value = fake_process
-                files = scraper.list_rsync_files('/usr/bin/rsync', 'localhost',
-                                                 '/tmp')
+                files = scraper.list_rsync_files(
+                    '/usr/bin/timeout', '/usr/bin/rsync', 'localhost', '/tmp')
         self.assertSetEqual(
             set([
                 scraper.RemoteFile(
@@ -138,7 +138,8 @@ class TestScraper(unittest.TestCase):
         mock_process.returncode = 24
         patched_subprocess.return_value = mock_process
         mock_process.stdout = serverfiles.splitlines()
-        files = set(scraper.list_rsync_files('/usr/bin/rsync', 'localhost', ''))
+        files = set(scraper.list_rsync_files(
+            '/usr/bin/timeout', '/usr/bin/rsync', 'localhost', ''))
         self.assertSetEqual(
             set([
                 scraper.RemoteFile('2016/01/06/.gz',
@@ -164,19 +165,29 @@ class TestScraper(unittest.TestCase):
         mock_process.stdout = []
         patched_subprocess.return_value = mock_process
         with self.assertRaises(scraper.RecoverableScraperException):
-            _ = scraper.list_rsync_files('/usr/bin/rsync', 'localhost', '')
+            scraper.list_rsync_files(
+                '/usr/bin/timeout', '/usr/bin/rsync', 'localhost', '')
+        self.assertIn('ERROR', [x.levelname for x in log.records])
+
+    @testfixtures.log_capture()
+    def test_list_rsync_files_throws_on_timeout(self, log):
+        with self.assertRaises(scraper.RecoverableScraperException):
+            scraper.list_rsync_files(
+                '/usr/bin/timeout', '/usr/bin/yes', 'localhost', '', '1')
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
     def test_list_rsync_files_fails(self, log):
         with self.assertRaises(scraper.RecoverableScraperException):
-            scraper.list_rsync_files('/bin/false', 'localhost', '')
+            scraper.list_rsync_files(
+                '/usr/bin/timeout', '/bin/false', 'localhost', '')
         self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
     def test_download_files_fails_and_dies(self, log):
         with self.assertRaises(scraper.RecoverableScraperException):
-            scraper.download_files('/bin/false', 'localhost/',
+            scraper.download_files('/usr/bin/timeout', '/bin/false',
+                                   'localhost/',
                                    [scraper.RemoteFile('2016/10/26/DNE1', 0),
                                     scraper.RemoteFile('2016/10/26/DNE2', 0)],
                                    '/tmp')
@@ -185,7 +196,8 @@ class TestScraper(unittest.TestCase):
     @testfixtures.log_capture()
     def test_download_files_with_empty_does_nothing(self, _log):
         # If the next line doesn't raise SystemExit then the test passes
-        scraper.download_files('/bin/false', 'localhost/', [], '/tmp')
+        scraper.download_files(
+            '/usr/bin/timeout', '/bin/false', 'localhost/', [], '/tmp')
 
     @mock.patch.object(subprocess, 'call')
     def test_download_files(self, patched_call):
@@ -206,8 +218,8 @@ class TestScraper(unittest.TestCase):
 
         patched_call.side_effect = verify_contents
         self.assertEqual(patched_call.call_count, 0)
-        scraper.download_files('/bin/true', 'localhost/', files_to_download,
-                               '/tmp')
+        scraper.download_files('/usr/bin/timeout', '/bin/true', 'localhost/',
+                               files_to_download, '/tmp')
         self.assertEqual(patched_call.call_count, 1)
 
     @mock.patch.object(subprocess, 'call')
@@ -229,8 +241,8 @@ class TestScraper(unittest.TestCase):
             return 0
 
         patched_call.side_effect = verify_contents
-        scraper.download_files('/bin/true', 'localhost/', files_to_download,
-                               '/tmp')
+        scraper.download_files('/usr/bin/timeout', '/bin/true', 'localhost/',
+                               files_to_download, '/tmp')
         self.assertEqual(set(x.filename for x in files_to_download),
                          set(files_downloaded))
         self.assertEqual(patched_call.call_count, 101)
