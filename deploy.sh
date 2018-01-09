@@ -177,10 +177,10 @@ rm ${CURRENT_DEPLOYMENTS} ${DESIRED_DEPLOYMENTS}
 # Output debug info
 echo kubectl returned success from "'$0 $@'" for all operations.
 echo Suppressed output is appended below to aid future debugging:
-echo Output of successful "'kubectl apply -f claims/'":
-cat ${CLAIMSOUT}
+echo Size of successful "'kubectl apply -f claims/'":
+wc ${CLAIMSOUT}  # Was cat ... , but that caused Travis to be unhappy
 rm ${CLAIMSOUT}
 
-echo Output of successful "'kubectl apply -f deployment/'":
-cat ${DEPLOYOUT}
+echo Size of successful "'kubectl apply -f deployment/'":
+wc ${DEPLOYOUT}  # Was cat ... , but that caused Travis to be unhappy
 rm ${DEPLOYOUT}

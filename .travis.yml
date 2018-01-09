@@ -21,21 +21,16 @@ deploy:
 ## Sandbox.
 # TODO: Add support for mlab-sandbox
 
-# The '&& sleep 10' below is to ensure that any particularly spammy last lines
-# have enough time to have their output ingested by Travis before the container
-# is reclaimed and then the build fails with SIGPIPE which causes the whole
-# build to look like it fails.
-
 ###############################
 ## Staging.
 - provider: script
-  script:  ./deploy.sh staging travis && sleep 10
+  script:  ./deploy.sh staging travis
   on:
     repo: m-lab/scraper
     branch: master
 
 - provider: script
-  script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-staging scraper && sleep 10
+  script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-staging scraper
   skip_cleanup: true
   on:
     repo: m-lab/scraper
@@ -44,13 +39,13 @@ deploy:
 ###############################
 ## Production.
 - provider: script
-  script:  ./deploy.sh production travis && sleep 10
+  script:  ./deploy.sh production travis
   on:
     repo: m-lab/scraper
     tags: true
 
 - provider: script
-  script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-oti scraper && sleep 10
+  script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-oti scraper
   skip_cleanup: true
   on:
     repo: m-lab/scraper
