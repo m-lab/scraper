@@ -69,10 +69,10 @@ spec:
               value: "/tmp"
           resources:
             requests:
-              memory: "200Mi"
+              memory: "200M"
               cpu: "30m"
             limits:
-              memory: "400Mi"
+              memory: "400M"
               cpu: "500m"
           volumeMounts:
           - mountPath: /scraper_data
@@ -86,10 +86,10 @@ spec:
             - containerPort: 9100
           resources:
             requests:
-              memory: "10Mi"
+              memory: "10M"
               cpu: "10m"
             limits:
-              memory: "10Mi"
+              memory: "10M"
               cpu: "10m"
           volumeMounts:
           - mountPath: /scraper_data
