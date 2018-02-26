@@ -8,4 +8,4 @@ set -e
 
 # Keep the full-path filenames consistent to not confuse code coverage tools.
 docker run -v `pwd`:`pwd` -w `pwd` scrapertest \
-  ./git-hooks/python-prepare-commit-msg $1
+  ./git-hooks/prepare-commit-msg $1

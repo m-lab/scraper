@@ -28,5 +28,5 @@ echo 127.0.0.1 ndt.iupui.mlab4.xxx08.measurement-lab.org >> /etc/hosts
 sleep 5  # Lose the race condition with the datastore and rsync starts
 $(gcloud beta emulators datastore env-init)
 env
-./git-hooks/python-pre-commit
+./git-hooks/pre-commit
 rm *.pyc
