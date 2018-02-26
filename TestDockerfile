@@ -6,6 +6,8 @@ MAINTAINER Peter Boothe <pboothe@google.com>
 RUN apk add git libffi-dev openssl-dev curl openjdk8 rsync
 ADD test-requirements.txt /test-requirements.txt
 RUN pip install -r test-requirements.txt
+ADD git-hooks/requirements-python.txt /git-hooks/requirements-python.txt
+RUN pip install -r /git-hooks/requirements-python.txt
 # Install the datastore emulator
 ADD travis/install_gcloud.sh /install_gcloud.sh
 RUN chmod +x /install_gcloud.sh
