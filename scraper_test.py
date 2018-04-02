@@ -119,7 +119,6 @@ class TestScraper(unittest.TestCase):
         # pylint: enable=line-too-long
 
     @mock.patch.object(subprocess, 'Popen')
-    @testfixtures.log_capture()
     def test_list_rsync_files_returns_24(self, patched_subprocess):
         # pylint: disable=line-too-long
         serverfiles = textwrap.dedent("""\
@@ -158,40 +157,42 @@ class TestScraper(unittest.TestCase):
         # pylint: enable=line-too-long
 
     @mock.patch.object(subprocess, 'Popen')
-    @testfixtures.log_capture()
-    def test_list_rsync_files_throws_on_failure(self, patched_subprocess, log):
-        mock_process = mock.Mock()
-        mock_process.returncode = 1
-        mock_process.stdout = []
-        patched_subprocess.return_value = mock_process
-        with self.assertRaises(scraper.RecoverableScraperException):
-            scraper.list_rsync_files(
-                '/usr/bin/timeout', '/usr/bin/rsync', 'localhost', '')
-        self.assertIn('ERROR', [x.levelname for x in log.records])
+    def test_list_rsync_files_throws_on_failure(self, patched_subprocess):
+        with testfixtures.LogCapture() as log:
+            mock_process = mock.Mock()
+            mock_process.returncode = 1
+            mock_process.stdout = []
+            patched_subprocess.return_value = mock_process
+            with self.assertRaises(scraper.RecoverableScraperException):
+                scraper.list_rsync_files(
+                    '/usr/bin/timeout', '/usr/bin/rsync', 'localhost', '')
+            self.assertIn('ERROR', [x.levelname for x in log.records])
 
-    @testfixtures.log_capture()
-    def test_list_rsync_files_throws_on_timeout(self, log):
-        with self.assertRaises(scraper.RecoverableScraperException):
-            scraper.list_rsync_files(
-                '/usr/bin/timeout', '/usr/bin/yes', 'localhost', '', '1')
-        self.assertIn('ERROR', [x.levelname for x in log.records])
+    def test_list_rsync_files_throws_on_timeout(self):
+        with testfixtures.LogCapture() as log:
+            with self.assertRaises(scraper.RecoverableScraperException):
+                scraper.list_rsync_files(
+                    '/usr/bin/timeout', '/usr/bin/yes', 'localhost', '', '1')
+            self.assertIn('ERROR', [x.levelname for x in log.records])
 
-    @testfixtures.log_capture()
-    def test_list_rsync_files_fails(self, log):
-        with self.assertRaises(scraper.RecoverableScraperException):
-            scraper.list_rsync_files(
-                '/usr/bin/timeout', '/bin/false', 'localhost', '')
-        self.assertIn('ERROR', [x.levelname for x in log.records])
+    def test_list_rsync_files_fails(self):
+        with testfixtures.LogCapture() as log:
+            with self.assertRaises(scraper.RecoverableScraperException):
+                scraper.list_rsync_files(
+                    '/usr/bin/timeout', '/bin/false', 'localhost', '')
+            self.assertIn('ERROR', [x.levelname for x in log.records])
 
-    @testfixtures.log_capture()
-    def test_download_files_fails_and_dies(self, log):
-        with self.assertRaises(scraper.RecoverableScraperException):
-            scraper.download_files('/usr/bin/timeout', '/bin/false',
-                                   'localhost/',
-                                   [scraper.RemoteFile('2016/10/26/DNE1', 0),
-                                    scraper.RemoteFile('2016/10/26/DNE2', 0)],
-                                   '/tmp')
-        self.assertIn('ERROR', [x.levelname for x in log.records])
+    def test_download_files_fails_and_dies(self):
+        with testfixtures.LogCapture() as log:
+            with self.assertRaises(scraper.RecoverableScraperException):
+                scraper.download_files(
+                    '/usr/bin/timeout',
+                    '/bin/false',
+                    'localhost/',
+                    [scraper.RemoteFile('2016/10/26/DNE1', 0),
+                     scraper.RemoteFile('2016/10/26/DNE2', 0)],
+                    '/tmp')
+            self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @testfixtures.log_capture()
     def test_download_files_with_empty_does_nothing(self, _log):
@@ -354,14 +355,14 @@ class TestScraper(unittest.TestCase):
                          datetime.datetime(2009, 1, 1, 0, 0, 0))
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
-    @testfixtures.log_capture()
-    def test_get_last_archived_date_bad_date(self, patched_get, log):
-        status = scraper.SyncStatus(None, None)
-        with self.assertRaises(scraper.NonRecoverableScraperException):
-            patched_get.return_value = dict(
-                maxrawfilemtimearchived='monkey')
-            status.get_last_archived_mtime()
-        self.assertIn('ERROR', [x.levelname for x in log.records])
+    def test_get_last_archived_date_bad_date(self, patched_get):
+        with testfixtures.LogCapture() as log:
+            status = scraper.SyncStatus(None, None)
+            with self.assertRaises(scraper.NonRecoverableScraperException):
+                patched_get.return_value = dict(
+                    maxrawfilemtimearchived='monkey')
+                status.get_last_archived_mtime()
+            self.assertIn('ERROR', [x.levelname for x in log.records])
 
     @mock.patch.object(scraper.SyncStatus, 'get_data')
     def test_get_last_archived_date_empty_date(self, patched_get):
@@ -461,19 +462,19 @@ class TestScraper(unittest.TestCase):
                          [('maxrawfilemtimearchived', 7)])
 
     @mock.patch.object(scraper.SyncStatus, 'update_data')
-    @testfixtures.log_capture()
-    def test_log_handler(self, patched_update_data, _log):
-        status = scraper.SyncStatus(None, None)
-        loghandler = scraper.SyncStatusLogHandler(status)
-        logger = logging.getLogger('temp_test')
-        logger.setLevel(logging.ERROR)
-        logger.addHandler(loghandler)
-        logger.info('INFORMATIVE')
-        self.assertEqual(patched_update_data.call_count, 0)
-        logger.error('BADNESS')
-        self.assertEqual(patched_update_data.call_count, 1)
-        self.assertEqual(type(patched_update_data.call_args[0][1]),
-                         unicode)
+    def test_log_handler(self, patched_update_data):
+        with testfixtures.LogCapture() as _log:
+            status = scraper.SyncStatus(None, None)
+            loghandler = scraper.SyncStatusLogHandler(status)
+            logger = logging.getLogger('temp_test')
+            logger.setLevel(logging.ERROR)
+            logger.addHandler(loghandler)
+            logger.info('INFORMATIVE')
+            self.assertEqual(patched_update_data.call_count, 0)
+            logger.error('TEST ERROR')
+            self.assertEqual(patched_update_data.call_count, 1)
+            self.assertEqual(type(patched_update_data.call_args[0][1]),
+                             unicode)
 
     def test_day_of_week(self):
         self.assertEqual(scraper.day_of_week(datetime.date(2017, 6, 15)),
@@ -703,7 +704,6 @@ class TestScraperInTempDir(unittest.TestCase):
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     @mock.patch.object(scraper, 'upload_up_to_date')
-    @testfixtures.log_capture()
     def test_initial_upload_with_enough_data(self, new_upload):
         new_upload.return_value = None
 
@@ -736,7 +736,6 @@ class TestScraperInTempDir(unittest.TestCase):
 
     @freezegun.freeze_time('2016-01-28 09:45:01 UTC')
     @mock.patch.object(scraper, 'upload_up_to_date')
-    @testfixtures.log_capture()
     def test_upload_if_allowed(self, new_upload):
         status = mock.Mock()
         status.get_last_archived_mtime.return_value = datetime.datetime(
