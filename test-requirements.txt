@@ -4,6 +4,7 @@ coveralls
 docformatter
 freezegun
 mock
+oauth2client
 pylint
 testfixtures
 unify
