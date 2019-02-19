@@ -41,7 +41,7 @@ import random
 import sys
 import time
 
-import oauth2client
+import oauth2client.tools
 import prometheus_client
 import retry.api
 import scraper
