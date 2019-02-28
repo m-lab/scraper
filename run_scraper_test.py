@@ -286,7 +286,9 @@ class EndToEndWithFakes(unittest.TestCase):
         time_since_epoch = (midnight -
                             datetime.datetime(1970, 1, 1)).total_seconds()
         self.assertTrue(
-            abs(value['maxrawfilemtimearchived'] - time_since_epoch) < 5)
+            abs(value['maxrawfilemtimearchived'] - time_since_epoch) < 5,
+            'maxrawfilemtimearchived(%d) and time_since_epoch(%d) differ by '
+            'too much' % (value['maxrawfilemtimearchived'], time_since_epoch))
 
     @mock.patch('time.sleep')
     def test_main_with_enough_data_for_early_upload(self, mock_sleep):
