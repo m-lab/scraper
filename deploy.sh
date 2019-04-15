@@ -75,7 +75,7 @@ then
   # These are the machines we scrape with our staging instance.
   # Disable -x to prevent build log spam
   set +x
-  cat operator/plsync/staging_patterns.txt operator/plsync/canary_machines.txt \
+  cat operator/plsync/canary_machines.txt \
     | while read PATTERN
       do
         fill_in_templates "${PATTERN}" 11 claims deployment
