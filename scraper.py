@@ -135,10 +135,11 @@ def has_one_bit_set_or_is_zero(i):
 
 
 # Use IPv4, archive mode, compression, limit total bandwidth usage to 10 Mbps,
-# don't wait too long before bailing out, and make sure to chmod the files to
-# have sensible permissions.
+# don't wait too long before bailing out, make sure to chmod the files to
+# have sensible permissions, and set SO_KEEPALIVE to ensure that long-lived
+# connections don't disappear from any NAT boxes in the middle.
 RSYNC_ARGS = ['-4', '-az', '--bwlimit=10000', '--timeout=300',
-              '--contimeout=300', '--chmod=u=rwX']
+              '--contimeout=300', '--chmod=u=rwX', '--sockopts=SO_KEEPALIVE=1']
 
 
 RemoteFile = collections.namedtuple('RemoteFile', ['filename', 'mtime'])
