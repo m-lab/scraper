@@ -34,18 +34,18 @@ mkdir claims
 # Fills in deployment templates.
 function fill_in_templates() {
   USAGE="$0 <pattern> <storage_size> <claims_dir> <deploy_dir>"
-  PATTERN=${1:?Please provide a pattern for mlabconfig: $USAGE}
+  PATTERN=${1:?Please provide a pattern for legacyconfig: $USAGE}
   GIGABYTES=${2:?Please give an integer number of gigabytes: $USAGE}
   CLAIMS=${3:?Please give a directory for the claims templates: $USAGE}
   DEPLOY=${4:?Please give a directory for the deployment templates: $USAGE}
 
-  ./operator/plsync/mlabconfig.py \
+  ./operator/plsync/legacyconfig.py \
       --format=scraper_kubernetes \
       --template_input=k8s/deploy_template.yml \
       --template_output=${DEPLOY}/deploy-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}.yml \
       --select="${PATTERN}"
 
-  ./operator/plsync/mlabconfig.py \
+  ./operator/plsync/legacyconfig.py \
       --format=scraper_kubernetes \
       --template_input=k8s/claim_template.yml \
       --template_output=${CLAIMS}/claim-{{site_safe}}-{{node_safe}}-{{experiment_safe}}-{{rsync_module_safe}}.yml \
