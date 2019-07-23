@@ -30,7 +30,7 @@ deploy:
     branch: master
 
 - provider: script
-  script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-staging scraper
+  script: $TRAVIS_BUILD_DIR/operator/deploy_scraper_prometheus_targets.sh mlab-staging
   skip_cleanup: true
   on:
     repo: m-lab/scraper
@@ -45,7 +45,7 @@ deploy:
     tags: true
 
 - provider: script
-  script: $TRAVIS_BUILD_DIR/operator/deploy_prometheus_targets.sh mlab-oti scraper
+  script: $TRAVIS_BUILD_DIR/operator/deploy_scraper_prometheus_targets.sh mlab-oti
   skip_cleanup: true
   on:
     repo: m-lab/scraper
