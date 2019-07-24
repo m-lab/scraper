@@ -24,12 +24,6 @@ deploy:
 ###############################
 ## Staging.
 - provider: script
-  script:  ./deploy.sh staging travis
-  on:
-    repo: m-lab/scraper
-    branch: master
-
-- provider: script
   script: $TRAVIS_BUILD_DIR/operator/deploy_scraper_prometheus_targets.sh mlab-staging
   skip_cleanup: true
   on:
