@@ -1,6 +1,8 @@
 [![Build Status](https://travis-ci.org/m-lab/scraper.svg?branch=master)](https://travis-ci.org/m-lab/scraper)
 [![Coverage Status](https://coveralls.io/repos/github/m-lab/scraper/badge.svg?branch=master)](https://coveralls.io/github/m-lab/scraper?branch=master)
 
+The scraper system has been turned down.  Feel free to fork this repo for your own purposes. M-Lab is keeping it here for historical reasons, but this code is no longer being used.
+
 # Scraper
 Scrape experiment data off of MLab nodes and upload it to the ETL pipeline.
 
