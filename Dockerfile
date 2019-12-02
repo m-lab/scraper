@@ -1,4 +1,4 @@
-FROM alpine:3.7
+FROM alpine:3.10
 MAINTAINER Peter Boothe <pboothe@google.com>
 # Install all the standard packages we need
 RUN apk update && apk add python python-dev py2-pip gcc g++ libc-dev bash rsync tar

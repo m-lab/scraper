@@ -12,39 +12,8 @@ install:
 - pip install -r requirements.txt
 - pip install -r test-requirements.txt
 - pip install coveralls
-- $TRAVIS_BUILD_DIR/travis/install_gcloud.sh kubectl
 script: ./pre-commit.sh
 after_success: coveralls
-deploy:
-
-###############################
-## Sandbox.
-# TODO: Add support for mlab-sandbox
-
-###############################
-## Staging.
-- provider: script
-  script: $TRAVIS_BUILD_DIR/operator/deploy_scraper_prometheus_targets.sh mlab-staging
-  skip_cleanup: true
-  on:
-    repo: m-lab/scraper
-    branch: master
-
-###############################
-## Production.
-- provider: script
-  script:  ./deploy.sh production travis
-  on:
-    repo: m-lab/scraper
-    tags: true
-
-- provider: script
-  script: $TRAVIS_BUILD_DIR/operator/deploy_scraper_prometheus_targets.sh mlab-oti
-  skip_cleanup: true
-  on:
-    repo: m-lab/scraper
-    tags: true
-
 before_install:
 - travis/decrypt.sh "$encrypted_24846e316994_key" "$encrypted_24846e316994_iv"
   keys/service-accounts.tar.enc /tmp/service-accounts.tar /tmp
